@@ -223,7 +223,7 @@ print(f"\nCSV built in memory with {len(all_rows)} rows → {csv_filename}")
 # 9.  SEND E‑MAIL
 # ────────────────────────────────────────────────────────────────────────────────
 smtp_host = os.getenv("SMTP_SERVER")
-smtp_port = int(os.getenv("SMTP_PORT", "465"))
+smtp_port = os.getenv("SMTP_PORT")
 smtp_user = os.getenv("SMTP_USER")
 smtp_pass = os.getenv("SMTP_PASS")
 email_from = os.getenv("EMAIL_FROM", smtp_user or "")
