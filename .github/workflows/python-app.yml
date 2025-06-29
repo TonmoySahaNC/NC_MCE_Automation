@@ -3,75 +3,72 @@ name: FleetControl Grohe Report
 on:
   workflow_dispatch:
   #schedule:
-   # - cron: '0 5 * * *'   # daily @05:00 UTC
+   # - cron: '0 5 * * *'
 
 jobs:
   grohe-report:
     runs-on: ubuntu-latest
+
+    permissions:             # <<-- ensure token can read artifacts
+      actions: read
+      contents: read
 
     env:
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
       GH_TOKEN:          ${{ github.token }}
 
     steps:
-      # 1) Checkout repo
       - uses: actions/checkout@v4
 
-      # 2) Python runtime
       - uses: actions/setup-python@v5
         with:
           python-version: 3.11
 
-      # 3) Install Python libs needed by FC_Report.py
-      - name: Install dependencies
+      - name: Install Python deps
         run: |
           pip install --upgrade pip
           pip install requests tzdata
 
-      # 4) Run FleetControl report (customer 2 = Grohe, query 3, current month)
       - name: Generate Grohe CSV
         run: |
           YEAR=$(date +'%Y')
           MONTH=$(date +'%-m')
-          echo "YEAR=$YEAR"  >> $GITHUB_ENV
-          echo "MONTH=$MONTH" >> $GITHUB_ENV
           printf '2\n3\n%s\n%s\n' "$YEAR" "$MONTH" | python FleetControl/FC_Report.py
 
-      # 5) Zip the CSV file for upload
       - name: Zip report
         run: |
           FILE=$(ls Grohe_events_*.csv | head -n1)
-          echo "REPORT_FILENAME=$FILE" >> $GITHUB_ENV
           zip -j Grohe_Report.zip "$FILE"
+          echo "REPORT_FILE=$FILE" >> $GITHUB_ENV
 
-      # 6) Upload artifact via official action
-      - name: Upload artifact (Grohe_Report.zip)
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: Grohe_Report
           path: Grohe_Report.zip
 
-      # 7) Fetch artifact ID instantly via GitHub CLI (no polling loops)
-      - name: Retrieve artifact ID with gh CLI
+      - name: Get artifact ID via gh CLI
         id: artifact
         run: |
-          sleep 5   # brief pause to let GitHub index the artifact
+          sleep 5
           ART_ID=$(gh api -H "Accept: application/vnd.github+json" \
-                   /repos/${{ github.repository }}/actions/artifacts --paginate \
+                   /repos/${{ github.repository }}/actions/artifacts \
                    -q '.artifacts[] | select(.name=="Grohe_Report") | .id' | head -n1)
           if [ -z "$ART_ID" ]; then
-            echo "artifact_found=no" >> $GITHUB_OUTPUT
-            echo "::warning:: Grohe_Report artifact ID not found."
+            echo "artifact_found=no"  >> $GITHUB_OUTPUT
           else
-            echo "artifact_found=yes"       >> $GITHUB_OUTPUT
-            echo "artifact_id=$ART_ID"      >> $GITHUB_OUTPUT
+            echo "artifact_found=yes" >> $GITHUB_OUTPUT
+            echo "artifact_id=$ART_ID" >> $GITHUB_OUTPUT
           fi
 
-      # 8) Slack notification (only if ID was found)
-      - name: Post Slack message
+      - name: Slack notify with download link
         if: steps.artifact.outputs.artifact_found == 'yes'
         run: |
-          LINK="https://github.com/${{ github.repository }}/actions/artifacts/${{ steps.artifact.outputs.artifact_id }}/zip"
-          FILE="$REPORT_FILENAME"
-          MSG="*:bar_chart: FleetControl Grohe Report generated*\n• Report: \`$FILE\`\n• :link: <${LINK}|Download CSV>"
-          curl -sSL -X POST -H 'Content-Type: application/json' --data $(jq -n --arg text "$MSG" '{text:$text}') "$SLACK_WEBHOOK_URL"
+          ART_ID=${{ steps.artifact.outputs.artifact_id }}
+          LINK="https://github.com/${{ github.repository }}/actions/artifacts/${ART_ID}/zip"
+          TEXT="*:bar_chart: FleetControl Grohe Report generated*\
+          \n• Report: \`${{ env.REPORT_FILE }}\`\
+          \n• :link: <${LINK}|Download CSV>"
+          curl -sSL -X POST -H 'Content-Type: application/json' \
+            --data "$(jq -n --arg text "$TEXT" '{text:$text}')" \
+            "$SLACK_WEBHOOK_URL"
