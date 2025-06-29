@@ -1,34 +1,44 @@
-name: Run FleetControl Report
+name: FleetControl Query 3 Report
 
+# Run manually or on a daily schedule
 on:
   workflow_dispatch:
+  #schedule:
+  #  - cron: '0 5 * * *'   # daily at 05:00 UTC
 
 jobs:
-  generate-and-email-report:
+  run-query-3:
     runs-on: ubuntu-latest
 
+    # Inject your SMTP/email secrets here
     env:
       SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
-      SMTP_PORT: ${{ secrets.SMTP_PORT }}
-      SMTP_USER: ${{ secrets.SMTP_USER }}
-      SMTP_PASS: ${{ secrets.SMTP_PASS }}
-      EMAIL_FROM: ${{ secrets.EMAIL_FROM }}
-      EMAIL_TO: ${{ secrets.EMAIL_TO }}
+      SMTP_PORT:   ${{ secrets.SMTP_PORT }}
+      SMTP_USER:   ${{ secrets.SMTP_USER }}
+      SMTP_PASS:   ${{ secrets.SMTP_PASS }}
+      EMAIL_FROM:  ${{ secrets.EMAIL_FROM }}
+      EMAIL_TO:    ${{ secrets.EMAIL_TO }}
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: 3.11
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install requests tzdata
 
-      - name: Run FleetControl report script
+      - name: Run FC_Report.py ‑ Query 3 for current month
         run: |
-          python FleetControl/FC_Report.py
+          # Compute current year and month (no leading zero)
+          CUR_YEAR=$(date +'%Y')
+          CUR_MONTH=$(date +'%-m')
+
+          echo "Running Query 3 for ${CUR_YEAR}-${CUR_MONTH}"
+          printf '0\n3\n%s\n%s\n' "$CUR_YEAR" "$CUR_MONTH" \
+            | python FleetControl/FC_Report.py
