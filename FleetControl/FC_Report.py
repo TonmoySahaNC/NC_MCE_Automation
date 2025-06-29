@@ -17,13 +17,6 @@ customers = {
     "6": {"CUSTOMER": "Thames","CUSTOMER_ID": "bdbc97ab-add5-4d37-afa6-5ebb7435eb3f","API_KEY": "DkK-BKFDXD5Lwi4Jcq4irxFnOUBI1Bo4Qv5RF_qy"}
 }
 print("Select a customer by entering the corresponding number:")
-print(" 0 -> All")
-print(" 1 -> Brother")
-print(" 2 -> Grohe")
-print(" 3 -> Heineken")
-print(" 4 -> Neste")
-print(" 5 -> Sandvik")
-print(" 6 -> Thames Water")
 selected = input("Enter the customer number (0-6): ").strip()
 
 if selected != "0" and selected not in customers:
@@ -117,9 +110,6 @@ queries = {
 }
 
 print("\nSelect a query to run:")
-print(" 1 -> List of CONNECTION_LOST Servers")
-print(" 2 -> Upcoming Events for specific Month (incomingEvents)")
-print(" 3 -> Patching Report for the specific Month & Year (events)")
 selected_query = input("Enter the query number (1-3): ").strip()
 
 if selected_query not in queries:
