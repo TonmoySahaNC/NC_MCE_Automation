@@ -1,8 +1,8 @@
 name: FleetControl Grohe Report
 
 on:
-  workflow_dispatch:
-  #schedule:
+  workflow_dispatch:      # Manual trigger
+  #schedule:               # Daily at 05:00 UTC
    # - cron: '0 5 * * *'
 
 jobs:
@@ -26,11 +26,12 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests tzdata
 
-      - name: Run FC_Report.py (Query 3 for Grohe - current month)
+      - name: Run FC_Report.py (Query 3 for Grohe, current month)
         run: |
           CUR_YEAR=$(date +'%Y')
           CUR_MONTH=$(date +'%-m')
-          printf '2\n3\n%s\n%s\n' "$CUR_YEAR" "$CUR_MONTH" | python FleetControl/FC_Report.py
+          printf '2\n3\n%s\n%s\n' "$CUR_YEAR" "$CUR_MONTH" \
+            | python FleetControl/FC_Report.py
 
       - name: Upload CSV artifact
         uses: actions/upload-artifact@v4
@@ -38,28 +39,30 @@ jobs:
           name: Grohe_Report
           path: Grohe_events_*.csv
 
-      - name: Get artifact ID and build download URL
-        id: get_artifact_url
+      - name: Build artifact download link
+        id: artifact
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          API_URL="https://api.github.com/repos/${{ github.repository }}/actions/artifacts"
-          RESPONSE=$(curl -s -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API_URL")
-          ARTIFACT_ID=$(echo "$RESPONSE" | jq '.artifacts[] | select(.name=="Grohe_Report") | .id')
+          API="https://api.github.com/repos/${{ github.repository }}/actions/artifacts"
+          RESP=$(curl -s -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API")
 
-          if [ -z "$ARTIFACT_ID" ]; then
-            echo "artifact_url=null" >> "$GITHUB_OUTPUT"
+          ART_ID=$(echo "$RESP" | jq '.artifacts[] | select(.name=="Grohe_Report") | .id' | head -n1)
+
+          if [ -z "$ART_ID" ]; then
+            echo "artifact_found=no" >> "$GITHUB_OUTPUT"
           else
-            echo "artifact_url=https://github.com/${{ github.repository }}/actions/artifacts/${ARTIFACT_ID}/zip" >> "$GITHUB_OUTPUT"
+            echo "artifact_found=yes" >> "$GITHUB_OUTPUT"
+            echo "artifact_url=https://github.com/${{ github.repository }}/actions/artifacts/${ART_ID}/zip" >> "$GITHUB_OUTPUT"
           fi
 
-
-      - name: Send Slack notification with correct download link
-        uses: slackapi/slack-github-action@v1.24.0
-        with:
-          payload: |
-            {
-              "text": "*📊 FleetControl Grohe Report generated*\n• Report: \`Grohe_events_${{ env.CUR_MONTH }}.csv\`\n• 🔗 <${{ steps.get_artifact_url.outputs.artifact_url }}|Click to download CSV>"
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      - name: Send Slack message
+        if: steps.artifact.outputs.artifact_found == 'yes'
+        run: |
+          CUR_YEAR=$(date +'%Y')
+          CUR_MONTH=$(date +'%b' | tr '[:upper:]' '[:lower:]')
+          FILE="Grohe_events_${CUR_YEAR}_${CUR_MONTH}_patch.csv"
+          LINK="${{ steps.artifact.outputs.artifact_url }}"
+          MSG="*📊 FleetControl Grohe Report generated*\n• Report: \`$FILE\`\n• 🔗 <$LINK|Click to download CSV>"
+          jq -n --arg text "$MSG" '{text:$text}' > slack.json
+          curl -sSL -X POST -H "Content-Type: application/json" --data @slack.json "$SLACK_WEBHOOK_URL"
