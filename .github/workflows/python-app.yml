@@ -3,17 +3,17 @@ name: FleetControl Grohe Report
 on:
   workflow_dispatch:
   #schedule:
-   # - cron: '0 5 * * *'
+   # - cron: '0 5 * * *' # runs daily at 05:00 UTC
 
 jobs:
-  report:
+  fleetcontrol-report:
     runs-on: ubuntu-latest
+
     env:
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
     steps:
-      - name: Check out repository
+      - name: Checkout repo
         uses: actions/checkout@v4
 
       - name: Set up Python 3.11
@@ -26,59 +26,47 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests tzdata
 
-      - name: Run FC_Report.py (Query 3 for Grohe, current month)
+      - name: Run FC_Report.py for Grohe (customer 2, query 3, current month)
         run: |
           CUR_YEAR=$(date +'%Y')
           CUR_MONTH=$(date +'%-m')
           printf '2\n3\n%s\n%s\n' "$CUR_YEAR" "$CUR_MONTH" | python FleetControl/FC_Report.py
 
-      - name: Zip report file
+      - name: Zip the CSV file
         run: |
           FILE=$(ls Grohe_events_*.csv | head -n1)
-          echo "ZIPPING FILE: $FILE"
+          echo "Zipping $FILE..."
           zip -r Grohe_Report.zip "$FILE"
 
-      - name: Upload artifact
+      - name: Upload artifact (Grohe_Report.zip)
+        id: upload
         uses: actions/upload-artifact@v4
         with:
           name: Grohe_Report
           path: Grohe_Report.zip
 
-      - name: Fetch artifact ID
-        id: artifact
+      - name: Parse artifact ID from logs
+        id: parse_artifact_id
         run: |
+          echo "Waiting 10s for GitHub to register the artifact..."
+          sleep 10
           API_URL="https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts"
-          echo "Waiting 5s before polling GitHub API..."
-          sleep 5
+          echo "API_URL=$API_URL"
 
-          for i in {1..10}; do
-            echo "Attempt $i: Querying artifact API..."
-            RESP=$(curl -s -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API_URL")
+          RESP=$(curl -s -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" -H "Accept: application/vnd.github+json" "$API_URL")
+          ART_ID=$(echo "$RESP" | jq -r '.artifacts[] | select(.name=="Grohe_Report") | .id')
 
-            if echo "$RESP" | jq -e '.artifacts' > /dev/null; then
-              ART_ID=$(echo "$RESP" | jq '.artifacts[] | select(.name=="Grohe_Report") | .id' | head -n1)
-              if [ -n "$ART_ID" ]; then
-                echo "Artifact found: ID = $ART_ID"
-                echo "artifact_found=yes" >> "$GITHUB_OUTPUT"
-                echo "artifact_id=$ART_ID" >> "$GITHUB_OUTPUT"
-                exit 0
-              fi
-            else
-              echo "Warning: GitHub API returned empty or malformed response."
-            fi
+          if [ -z "$ART_ID" ] || [ "$ART_ID" == "null" ]; then
+            echo "Artifact ID not found. Failing."
+            exit 1
+          fi
 
-            echo "Artifact not found yet. Waiting 6s before retry..."
-            sleep 6
-          done
+          echo "artifact_id=$ART_ID" >> "$GITHUB_OUTPUT"
 
-          echo "artifact_found=no" >> "$GITHUB_OUTPUT"
-          echo "Error: Artifact not found after multiple retries."
-
-      - name: Post Slack message
-        if: steps.artifact.outputs.artifact_found == 'yes'
+      - name: Send Slack message with download link
         uses: slackapi/slack-github-action@v1.24.0
         with:
           payload: |
             {
-              "text": ":bar_chart: *FleetControl Grohe Report generated*\n\n• Report: `Grohe_events_$(date +'%Y_%b' | tr '[:upper:]' '[:lower:]')_patch.csv`\n• :link: <https://github.com/${{ github.repository }}/actions/artifacts/${{ steps.artifact.outputs.artifact_id }}/zip|Download CSV>"
+              "text": "*\uD83D\uDCCA FleetControl Grohe Report generated*\n\n• Report: `Grohe_events_2025_jun_patch.csv`\n• :link: <https://github.com/${{ github.repository }}/actions/artifacts/${{ steps.parse_artifact_id.outputs.artifact_id }}/zip|Click to download CSV>"
             }
