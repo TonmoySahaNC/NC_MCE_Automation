@@ -1,4 +1,4 @@
-name: FleetControl Query 3 Report
+name: FleetControl Slack Report
 
 on:
   workflow_dispatch:
@@ -9,46 +9,37 @@ jobs:
   report:
     runs-on: ubuntu-latest
 
-    env:
-      FLOW_URL: ${{ secrets.FLOW_URL }}
-
     steps:
-      - name: Check out repository
+      - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: 3.11
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install requests tzdata
 
-      - name: Run FC_Report.py for Query 3 (Brother, current month)
-        id: csv
+      - name: Run Report Script
         run: |
           CUR_YEAR=$(date +'%Y')
           CUR_MONTH=$(date +'%-m')
-          echo "Running for Brother (Customer 1), Query 3..."
-          printf '1\n3\n%s\n%s\n' "$CUR_YEAR" "$CUR_MONTH" | python FleetControl/FC_Report.py
-          GENERATED=$(ls *_events_${CUR_YEAR}_*.csv | head -n1)
-          echo "file=$GENERATED" >> "$GITHUB_OUTPUT"
+          printf '1\n3\n%s\n%s\n' "$CUR_YEAR" "$CUR_MONTH" \
+            | python FleetControl/FC_Report.py
 
-      - name: Upload CSV to Power Automate Flow
-        run: |
-          FILE="${{ steps.csv.outputs.file }}"
-          echo "Uploading $FILE to Power Automate flow..."
+      - name: Upload CSV as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: fleet-report
+          path: '*.csv'
 
-          b64content=$(base64 -w0 "$FILE")
-          jq -n --arg filename "$FILE" --arg filecontent "$b64content" \
-            '{filename: $filename, filecontent: $filecontent}' > payload.json
-
-          curl -sSL -X POST "$FLOW_URL" \
-               -H "Content-Type: application/json" \
-               --data @payload.json
-
-          echo "Flow invoked"
+      - name: Send Slack notification
         env:
-          FLOW_URL: ${{ secrets.FLOW_URL }}
+          SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
+        run: |
+          FILE_NAME=$(ls *.csv | head -n 1)
+          curl -X POST -H 'Content-type: application/json' --data "{
+            \"text\": \" *FleetControl Report Generated*\nFile: \`${FILE_NAME}\`\nRun: <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Report>\"
+          }" $SLACK_WEBHOOK
