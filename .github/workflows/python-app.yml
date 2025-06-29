@@ -2,8 +2,8 @@ name: FleetControl Grohe Report
 
 on:
   workflow_dispatch:
-  #schedule:
-   # - cron: '0 5 * * *'
+#  schedule:
+ #   - cron: '0 5 * * *'
 
 jobs:
   grohe-report:
@@ -11,7 +11,6 @@ jobs:
 
     env:
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-      GH_TOKEN: ${{ github.token }}
 
     steps:
       - name: Checkout repository
@@ -33,35 +32,24 @@ jobs:
           CUR_MONTH=$(date +'%-m')
           printf '2\n3\n%s\n%s\n' "$CUR_YEAR" "$CUR_MONTH" | python FleetControl/FC_Report.py
 
-      - name: Zip CSV for upload
+      - name: Zip report
         run: |
           FILE=$(ls Grohe_events_*.csv | head -n1)
           zip -j Grohe_Report.zip "$FILE"
 
-      - name: Upload report as artifact
-        id: upload
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: Grohe_Report
           path: Grohe_Report.zip
 
-      - name: Notify Slack with artifact link
+      - name: Notify Slack with download link
         run: |
-          sleep 8  # Let GitHub index artifact
-          ARTIFACT_API="https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts"
-          RESP=$(curl -s -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$ARTIFACT_API")
-          ART_ID=$(echo "$RESP" | jq -r '.artifacts[] | select(.name=="Grohe_Report") | .id' | head -n1)
-
-          if [ -z "$ART_ID" ] || [ "$ART_ID" == "null" ]; then
-            echo "Artifact not found, skipping Slack notification."
-            exit 0
-          fi
-
-          ART_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${ART_ID}"
           YR=$(date +'%Y')
           MON=$(date +'%b' | tr '[:upper:]' '[:lower:]')
           FILE="Grohe_events_${YR}_${MON}_patch.csv"
-          TEXT="*:bar_chart: FleetControl Grohe Report generated*\n• Report: \`${FILE}\`\n• :link: <${ART_URL}|View & Download CSV>"
+          LINK="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts"
+          TEXT="*:bar_chart: FleetControl Grohe Report generated*\n• Report: \`${FILE}\`\n• :link: <${LINK}|View & Download CSV>"
 
           echo "$TEXT"
           jq -n --arg text "$TEXT" '{text: $text}' > slack.json
