@@ -45,20 +45,20 @@ jobs:
           name: Grohe_Report
           path: Grohe_Report.zip
 
-      - name: Parse artifact URL from logs and notify Slack
-        if: always()
+      - name: Extract artifact URL and notify Slack
         run: |
-          echo "::group::Extract artifact URL"
-          LOG_FILE="$GITHUB_WORKSPACE/artifact_log.txt"
-          ARTIFACT_LINE=$(grep -o 'Artifact download URL: https://[^ ]*' "$GITHUB_ENV"/../_temp/_github_workflow.log || echo "")
-          echo "$ARTIFACT_LINE" > "$LOG_FILE"
+          echo "⏳ Fetching job log via gh CLI…"
+          LOG=$(gh run view ${{ github.run_id }} --log)
 
-          if [[ -s "$LOG_FILE" ]]; then
-            ART_URL=$(cat "$LOG_FILE" | awk '{print $4}')
-            FILE="Grohe_events_$(date +'%Y_%b' | tr '[:upper:]' '[:lower:]')_patch.csv"
-            TEXT="*:bar_chart: FleetControl Grohe Report generated*\n• Report: \`$FILE\`\n• :link: <$ART_URL|Download CSV>"
-            curl -sSL -X POST -H 'Content-Type: application/json' --data "$(jq -n --arg text "$TEXT" '{text:$text}')" "$SLACK_WEBHOOK_URL"
-          else
-            echo "::warning::Artifact URL not found."
+          URL=$(echo "$LOG" | grep -oE 'https://github.com/.*/artifacts/[0-9]+' | head -n1)
+
+          if [ -z "$URL" ]; then
+            echo "::notice::Artifact URL not found – Slack message skipped."
+            exit 0
           fi
-          echo "::endgroup::"
+
+          FILE="Grohe_events_$(date +'%Y_%b' | tr '[:upper:]' '[:lower:]')_patch.csv"
+          TEXT="*:bar_chart: FleetControl Grohe Report generated*\n• Report: \`${FILE}\`\n• :link: <${URL}|Download CSV>"
+
+          jq -n --arg text "$TEXT" '{text:$text}' > slack.json
+          curl -sSL -X POST -H 'Content-Type: application/json' --data @slack.json "$SLACK_WEBHOOK_URL"
