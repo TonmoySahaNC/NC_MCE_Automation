@@ -10,6 +10,7 @@ jobs:
     runs-on: ubuntu-latest
     env:
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      GH_TOKEN: ${{ github.token }}
 
     steps:
       - name: Checkout
@@ -21,45 +22,44 @@ jobs:
           python-version: 3.11
 
       - name: Install dependencies
-        run: |
-          pip install requests tzdata
+        run: pip install requests tzdata
 
-      - name: Run Python report script
+      - name: Run FC_Report.py (Grohe, Query 3, current month)
         run: |
           CUR_YEAR=$(date +'%Y')
           CUR_MONTH=$(date +'%-m')
-          printf '2\n3\n%s\n%s\n' "$CUR_YEAR" "$CUR_MONTH" \
-            | python FleetControl/FC_Report.py
+          printf '2\n3\n%s\n%s\n' "$CUR_YEAR" "$CUR_MONTH" | python FleetControl/FC_Report.py
 
-      - name: Prepare ZIP file
+      - name: Zip the report file
         run: |
           FILE=$(ls Grohe_events_*.csv | head -n1)
-          echo "ZIPPING FILE: $FILE"
+          echo "Zipping: $FILE"
           zip -j Grohe_Report.zip "$FILE"
 
-      - name: Upload ZIP as artifact and extract ID
-        id: artifact
-        run: |
-          set -e
-          UPLOAD_OUTPUT=$(mktemp)
-          
-          echo "Uploading Grohe_Report.zip..."
-          echo "" > upload.log
-          actions/upload-artifact/upload-artifact -n Grohe_Report -p Grohe_Report.zip | tee "$UPLOAD_OUTPUT"
+      - name: Upload report as artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Grohe_Report
+          path: Grohe_Report.zip
 
-          ART_ID=$(grep -oE 'Artifact ID [0-9]+' "$UPLOAD_OUTPUT" | awk '{print $3}')
-          if [ -z "$ART_ID" ]; then
-            echo "artifact_found=no" >> "$GITHUB_OUTPUT"
-          else
+      - name: Get artifact ID from API
+        id: get_artifact
+        run: |
+          API_URL="https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts"
+          RESP=$(curl -s -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API_URL")
+          ART_ID=$(echo "$RESP" | jq '.artifacts[] | select(.name=="Grohe_Report") | .id' | head -n1)
+          if [ -n "$ART_ID" ]; then
             echo "artifact_found=yes" >> "$GITHUB_OUTPUT"
             echo "artifact_id=$ART_ID" >> "$GITHUB_OUTPUT"
+          else
+            echo "artifact_found=no" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Send Slack notification with direct download link
-        if: steps.artifact.outputs.artifact_found == 'yes'
+      - name: Send Slack message with artifact link
+        if: steps.get_artifact.outputs.artifact_found == 'yes'
         run: |
-          ARTIFACT_ID=${{ steps.artifact.outputs.artifact_id }}
-          DOWNLOAD_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${ARTIFACT_ID}"
+          ART_ID=${{ steps.get_artifact.outputs.artifact_id }}
+          URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${ART_ID}"
           curl -X POST -H 'Content-type: application/json' --data "{
-            \"text\": \":bar_chart: *FleetControl Grohe Report generated*\n• Report: \`Grohe_events_$(date +'%Y_%b' | tr '[:upper:]' '[:lower:]')_patch.csv\`\n• :link: <${DOWNLOAD_URL}|Click to download CSV>\"
+            \"text\": \":bar_chart: *FleetControl Grohe Report generated*\n• Report: \`Grohe_events_$(date +'%Y_%b' | tr '[:upper:]' '[:lower:]')_patch.csv\`\n• :link: <${URL}|Click to download CSV>\"
           }" "$SLACK_WEBHOOK_URL"
