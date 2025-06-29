@@ -1,13 +1,16 @@
 name: FleetControl Grohe Report
 
 on:
-  workflow_dispatch:      # manual trigger
-  #schedule:               # scheduled daily at 05:00 UTC
+  workflow_dispatch:
+  #schedule:
    # - cron: '0 5 * * *'
 
 jobs:
   report:
     runs-on: ubuntu-latest
+
+    env:
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
     steps:
       - name: Check out repository
@@ -23,30 +26,40 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests tzdata
 
-      - name: Run FC_Report.py for Grohe (Query 3, current month)
+      - name: Run FC_Report.py (Query 3 for Grohe - current month)
         run: |
           CUR_YEAR=$(date +'%Y')
           CUR_MONTH=$(date +'%-m')
-          printf '2\n3\n%s\n%s\n' "$CUR_YEAR" "$CUR_MONTH" \
-            | python FleetControl/FC_Report.py
+          printf '2\n3\n%s\n%s\n' "$CUR_YEAR" "$CUR_MONTH" | python FleetControl/FC_Report.py
 
       - name: Upload CSV artifact
         uses: actions/upload-artifact@v4
         with:
-          name: fleet-report
-          path: '*.csv'
+          name: Grohe_Report
+          path: Grohe_events_*.csv
 
-      - name: Send Slack message
+      - name: Install GitHub CLI
+        run: sudo apt install gh
+
+      - name: Get direct artifact download URL
+        id: artifact_url
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          RUN_ID=${{ github.run_id }}
+          REPO=${{ github.repository }}
+          ARTIFACT_API="https://api.github.com/repos/${REPO}/actions/runs/${RUN_ID}/artifacts"
+          echo "Calling $ARTIFACT_API"
+          URL=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "$ARTIFACT_API" \
+            | jq -r '.artifacts[0].archive_download_url')
+          echo "artifact_url=$URL" >> "$GITHUB_OUTPUT"
+
+      - name: Send Slack notification with artifact link
         uses: slackapi/slack-github-action@v1.24.0
         with:
           payload: |
             {
-              "text": "*📊 FleetControl Grohe Report generated*\n\n• Report: `Grohe_events_${{ env.CUR_YEAR }}_${{ env.CUR_MONTH }}_patch.csv`\n• [➡️ View & Download CSV from GitHub Run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+              "text": "*📊 FleetControl Grohe Report generated*\n• Report: `Grohe_events_${{ steps.date.outputs.month }}.csv`\n• 🔗 <${{ steps.artifact_url.outputs.artifact_url }}|Click to download CSV>"
             }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-
-      - name: Set current date as environment variables
-        run: |
-          echo "CUR_YEAR=$(date +'%Y')" >> $GITHUB_ENV
-          echo "CUR_MONTH=$(date +'%b' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_ENV
