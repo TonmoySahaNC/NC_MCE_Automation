@@ -44,12 +44,15 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           API_URL="https://api.github.com/repos/${{ github.repository }}/actions/artifacts"
-          ARTIFACT_ID=$(curl -s -H "Authorization: Bearer $GH_TOKEN" $API_URL | jq '.artifacts[] | select(.name=="Grohe_Report") | .id')
+          RESPONSE=$(curl -s -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API_URL")
+          ARTIFACT_ID=$(echo "$RESPONSE" | jq '.artifacts[] | select(.name=="Grohe_Report") | .id')
+
           if [ -z "$ARTIFACT_ID" ]; then
             echo "artifact_url=null" >> "$GITHUB_OUTPUT"
           else
             echo "artifact_url=https://github.com/${{ github.repository }}/actions/artifacts/${ARTIFACT_ID}/zip" >> "$GITHUB_OUTPUT"
           fi
+
 
       - name: Send Slack notification with correct download link
         uses: slackapi/slack-github-action@v1.24.0
