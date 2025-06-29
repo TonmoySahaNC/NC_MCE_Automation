@@ -3,7 +3,7 @@ name: FleetControl Grohe Report
 on:
   workflow_dispatch:
   #schedule:
-   # - cron: '0 5 * * *'  # Daily at 05:00 UTC
+   # - cron: '0 5 * * *'
 
 jobs:
   grohe-report:
@@ -14,9 +14,11 @@ jobs:
       GH_TOKEN: ${{ github.token }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
         with:
           python-version: 3.11
 
@@ -25,37 +27,38 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests tzdata
 
-      - name: Generate Grohe CSV Report
+      - name: Generate Grohe CSV report
         run: |
           CUR_YEAR=$(date +'%Y')
           CUR_MONTH=$(date +'%-m')
           printf '2\n3\n%s\n%s\n' "$CUR_YEAR" "$CUR_MONTH" | python FleetControl/FC_Report.py
 
-      - name: Zip report file
+      - name: Zip the report
         run: |
           FILE=$(ls Grohe_events_*.csv | head -n1)
-          echo "Zipping $FILE → Grohe_Report.zip"
           zip -j Grohe_Report.zip "$FILE"
 
-      - name: Upload artifact and capture URL
+      - name: Upload artifact and log URL
         id: upload
-        run: |
-          echo "::group::Upload Artifact"
-          echo "Uploading Grohe_Report.zip"
-          actions/upload-artifact/upload-artifact -n Grohe_Report -p Grohe_Report.zip 2>&1 | tee upload.log || true
-          echo "::endgroup::"
-          URL=$(grep -o 'https://github.com.*/artifacts/[0-9]*' upload.log | head -n1)
-          if [ -n "$URL" ]; then
-            echo "artifact_url=$URL" >> "$GITHUB_OUTPUT"
-          else
-            echo "artifact_url=" >> "$GITHUB_OUTPUT"
-            echo "::warning::Could not extract artifact URL"
-          fi
+        uses: actions/upload-artifact@v4
+        with:
+          name: Grohe_Report
+          path: Grohe_Report.zip
 
-      - name: Send Slack notification with raw artifact URL
-        if: steps.upload.outputs.artifact_url != ''
+      - name: Parse artifact URL from logs and notify Slack
+        if: always()
         run: |
-          TEXT="*:bar_chart: Grohe Report*\n• :link: <${{ steps.upload.outputs.artifact_url }}|Download CSV>"
-          curl -s -X POST -H 'Content-type: application/json' \
-            --data "$(jq -n --arg text \"$TEXT\" '{text: $text}')" \
-            "$SLACK_WEBHOOK_URL"
+          echo "::group::Extract artifact URL"
+          LOG_FILE="$GITHUB_WORKSPACE/artifact_log.txt"
+          ARTIFACT_LINE=$(grep -o 'Artifact download URL: https://[^ ]*' "$GITHUB_ENV"/../_temp/_github_workflow.log || echo "")
+          echo "$ARTIFACT_LINE" > "$LOG_FILE"
+
+          if [[ -s "$LOG_FILE" ]]; then
+            ART_URL=$(cat "$LOG_FILE" | awk '{print $4}')
+            FILE="Grohe_events_$(date +'%Y_%b' | tr '[:upper:]' '[:lower:]')_patch.csv"
+            TEXT="*:bar_chart: FleetControl Grohe Report generated*\n• Report: \`$FILE\`\n• :link: <$ART_URL|Download CSV>"
+            curl -sSL -X POST -H 'Content-Type: application/json' --data "$(jq -n --arg text "$TEXT" '{text:$text}')" "$SLACK_WEBHOOK_URL"
+          else
+            echo "::warning::Artifact URL not found."
+          fi
+          echo "::endgroup::"
