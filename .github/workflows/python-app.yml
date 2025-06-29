@@ -1,45 +1,58 @@
-name: FleetControl Slack Report
+name: FleetControl – Grohe (Query 3) → Slack
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:           # run manually from Actions tab
   #schedule:
-   # - cron: '0 5 * * *'
+   # - cron: '0 5 * * *'        # every day at 05:00 UTC
 
 jobs:
-  report:
+  grohe-report:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      # 1) Check out repo
+      - uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      # 2) Python runtime
+      - uses: actions/setup-python@v5
         with:
           python-version: 3.11
 
+      # 3) Install deps
       - name: Install Python dependencies
         run: |
+          python -m pip install --upgrade pip
           pip install requests tzdata
 
-      - name: Run Report Script
+      # 4) Run report for Grohe (customer 2) / Query 3 / current month
+      - name: Run FC_Report.py (Grohe – Query 3)
         run: |
           CUR_YEAR=$(date +'%Y')
           CUR_MONTH=$(date +'%-m')
-          printf '1\n3\n%s\n%s\n' "$CUR_YEAR" "$CUR_MONTH" \
+          printf '2\n3\n%s\n%s\n' "$CUR_YEAR" "$CUR_MONTH" \
             | python FleetControl/FC_Report.py
 
-      - name: Upload CSV as artifact
+      # 5) Capture the CSV filename (newest in workspace)
+      - name: Identify CSV
+        id: csv
+        run: |
+          FILE=$(ls -1t *.csv | head -n1)
+          echo "file=$FILE" >> "$GITHUB_OUTPUT"
+
+      # 6) Upload CSV as artifact (optional but handy)
+      - name: Upload CSV artifact
         uses: actions/upload-artifact@v4
         with:
-          name: fleet-report
-          path: '*.csv'
+          name: fleet-report-grohe
+          path: ${{ steps.csv.outputs.file }}
 
-      - name: Send Slack notification
+      # 7) Post a Slack message (text with link to run & artifact)
+      - name: Slack notification
         env:
           SLACK_WEBHOOK: ${{ secrets.SLACK_WEBHOOK }}
         run: |
-          FILE_NAME=$(ls *.csv | head -n 1)
-          curl -X POST -H 'Content-type: application/json' --data "{
-            \"text\": \" *FleetControl Report Generated*\nFile: \`${FILE_NAME}\`\nRun: <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}|View Report>\"
-          }" $SLACK_WEBHOOK
+          FILE_NAME=${{ steps.csv.outputs.file }}
+          RUN_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+          curl -X POST "$SLACK_WEBHOOK" \
+               -H 'Content-type: application/json' \
+               --data "$(jq -n --arg text ":bar_chart: *FleetControl Grohe Report generated*\n• File: \`$FILE_NAME\`\n• <${RUN_URL}|View workflow run & download CSV>" '{text:$text}')"
