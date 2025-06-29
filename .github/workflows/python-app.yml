@@ -15,7 +15,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: 3.11
@@ -24,42 +24,42 @@ jobs:
         run: |
           pip install requests tzdata
 
-      - name: Run FC_Report.py for Grohe (Query 3, Current Month)
+      - name: Run Python report script
         run: |
           CUR_YEAR=$(date +'%Y')
           CUR_MONTH=$(date +'%-m')
           printf '2\n3\n%s\n%s\n' "$CUR_YEAR" "$CUR_MONTH" \
             | python FleetControl/FC_Report.py
 
-      - name: Rename CSV
+      - name: Prepare ZIP file
         run: |
           FILE=$(ls Grohe_events_*.csv | head -n1)
+          echo "ZIPPING FILE: $FILE"
           zip -j Grohe_Report.zip "$FILE"
 
-      - name: Upload Artifact and Extract ID
-        id: upload_artifact
+      - name: Upload ZIP as artifact and extract ID
+        id: artifact
         run: |
-          OUTPUT=$(gh api \
-            -X POST \
-            -F name='Grohe_Report' \
-            -F file=@Grohe_Report.zip \
-            /repos/${{ github.repository }}/actions/artifacts \
-            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github+json" 2>&1 || true)
+          set -e
+          UPLOAD_OUTPUT=$(mktemp)
+          
+          echo "Uploading Grohe_Report.zip..."
+          echo "" > upload.log
+          actions/upload-artifact/upload-artifact -n Grohe_Report -p Grohe_Report.zip | tee "$UPLOAD_OUTPUT"
 
-          echo "$OUTPUT"
-
-          ARTIFACT_ID=$(echo "$OUTPUT" | grep -oE '"id":[0-9]+' | head -n1 | cut -d: -f2 | tr -d ' ')
-          if [ -n "$ARTIFACT_ID" ]; then
-            echo "artifact_id=$ARTIFACT_ID" >> "$GITHUB_OUTPUT"
+          ART_ID=$(grep -oE 'Artifact ID [0-9]+' "$UPLOAD_OUTPUT" | awk '{print $3}')
+          if [ -z "$ART_ID" ]; then
+            echo "artifact_found=no" >> "$GITHUB_OUTPUT"
           else
-            echo "Failed to extract artifact ID"
-            exit 1
+            echo "artifact_found=yes" >> "$GITHUB_OUTPUT"
+            echo "artifact_id=$ART_ID" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Notify Slack with Download Link
-        if: success()
+      - name: Send Slack notification with direct download link
+        if: steps.artifact.outputs.artifact_found == 'yes'
         run: |
-          curl -X POST -H 'Content-type: application/json' --data '{
-            "text": "*:bar_chart: FleetControl Grohe Report generated*\n• Report: `Grohe_events_'$(date +'%Y_%b' | tr '[:upper:]' '[:lower:]')'_patch.csv`\n• :link: <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${{ steps.upload_artifact.outputs.artifact_id }}|Click to download CSV>"
-          }' $SLACK_WEBHOOK_URL
+          ARTIFACT_ID=${{ steps.artifact.outputs.artifact_id }}
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${ARTIFACT_ID}"
+          curl -X POST -H 'Content-type: application/json' --data "{
+            \"text\": \":bar_chart: *FleetControl Grohe Report generated*\n• Report: \`Grohe_events_$(date +'%Y_%b' | tr '[:upper:]' '[:lower:]')_patch.csv\`\n• :link: <${DOWNLOAD_URL}|Click to download CSV>\"
+          }" "$SLACK_WEBHOOK_URL"
