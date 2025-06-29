@@ -3,73 +3,63 @@ name: FleetControl Grohe Report
 on:
   workflow_dispatch:
   #schedule:
-   # - cron: '0 5 * * *'  # daily at 05:00 UTC
+   # - cron: '0 5 * * *'
 
 jobs:
   report:
     runs-on: ubuntu-latest
-
     env:
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
-      - name: Check out code
+      - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: 3.11
 
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
           pip install requests tzdata
 
-      - name: Run Grohe FC Report (Query 3)
+      - name: Run FC_Report.py for Grohe (Query 3, Current Month)
         run: |
           CUR_YEAR=$(date +'%Y')
           CUR_MONTH=$(date +'%-m')
           printf '2\n3\n%s\n%s\n' "$CUR_YEAR" "$CUR_MONTH" \
             | python FleetControl/FC_Report.py
 
-      - name: Compress the CSV
+      - name: Rename CSV
         run: |
           FILE=$(ls Grohe_events_*.csv | head -n1)
-          zip Grohe_Report.zip "$FILE"
+          zip -j Grohe_Report.zip "$FILE"
 
-      - name: Upload artifact using GitHub CLI and capture artifact ID
-        id: upload_csv
+      - name: Upload Artifact and Extract ID
+        id: upload_artifact
         run: |
-          echo "Uploading Grohe_Report.zip..."
-          RESP=$(gh api \
+          OUTPUT=$(gh api \
             -X POST \
-            -H "Accept: application/vnd.github+json" \
+            -F name='Grohe_Report' \
+            -F file=@Grohe_Report.zip \
             /repos/${{ github.repository }}/actions/artifacts \
-            -f name="Grohe_Report" \
-            -f file=@Grohe_Report.zip)
+            -H "Authorization: token ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" 2>&1 || true)
 
-          echo "$RESP" > upload.json
-          ARTIFACT_ID=$(jq -r '.id' upload.json)
-          echo "artifact_id=$ARTIFACT_ID" >> "$GITHUB_OUTPUT"
+          echo "$OUTPUT"
 
-      - name: Send Slack message with artifact link
-        if: steps.upload_csv.outputs.artifact_id != ''
-        uses: slackapi/slack-github-action@v1.24.0
-        with:
-          payload: |
-            {
-              "text": "*📊 FleetControl Grohe Report generated*",
-              "blocks": [
-                {
-                  "type": "section",
-                  "text": {
-                    "type": "mrkdwn",
-                    "text": "*📊 FleetControl Grohe Report generated*\n• Report: \`Grohe_events.csv\`\n• <https://github.com/${{ github.repository }}/actions/artifacts/${{ steps.upload_csv.outputs.artifact_id }}/zip|➡️ Click to download CSV>"
-                  }
-                }
-              ]
-            }
-        env:
-          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+          ARTIFACT_ID=$(echo "$OUTPUT" | grep -oE '"id":[0-9]+' | head -n1 | cut -d: -f2 | tr -d ' ')
+          if [ -n "$ARTIFACT_ID" ]; then
+            echo "artifact_id=$ARTIFACT_ID" >> "$GITHUB_OUTPUT"
+          else
+            echo "Failed to extract artifact ID"
+            exit 1
+          fi
+
+      - name: Notify Slack with Download Link
+        if: success()
+        run: |
+          curl -X POST -H 'Content-type: application/json' --data '{
+            "text": "*:bar_chart: FleetControl Grohe Report generated*\n• Report: `Grohe_events_'$(date +'%Y_%b' | tr '[:upper:]' '[:lower:]')'_patch.csv`\n• :link: <https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${{ steps.upload_artifact.outputs.artifact_id }}|Click to download CSV>"
+          }' $SLACK_WEBHOOK_URL
