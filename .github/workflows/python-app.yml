@@ -1,15 +1,15 @@
 name: FleetControl Query 3 Report
 
 on:
-  workflow_dispatch:
-  #schedule:
-   # - cron: '0 5 * * *'   # every day at 05:00 UTC
+  workflow_dispatch:      # manual trigger
+  schedule:               # scheduled daily at 05:00 UTC
+    - cron: '0 5 * * *'
 
 jobs:
   report:
     runs-on: ubuntu-latest
 
-    # Inject repository secrets into the job environment
+    # Inject repository-level secrets into the job environment
     env:
       SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
       SMTP_PORT:   ${{ secrets.SMTP_PORT }}
@@ -19,10 +19,10 @@ jobs:
       EMAIL_TO:    ${{ secrets.EMAIL_TO }}
 
     steps:
-      - name: Check out code
+      - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: 3.11
@@ -32,7 +32,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests tzdata
 
-      - name: Run Query 3 and produce CSV
+      - name: Run FC_Report.py (Query 3 for current month)
         run: |
           CUR_YEAR=$(date +'%Y')
           CUR_MONTH=$(date +'%-m')
@@ -53,15 +53,15 @@ jobs:
           server_port:    ${{ env.SMTP_PORT }}
           username:       ${{ env.SMTP_USER }}
           password:       ${{ env.SMTP_PASS }}
-          secure:         true
+          secure:         false       # plain connect for STARTTLS on 587
+          starttls:       true        # upgrade to TLS after connect
           from:           ${{ env.EMAIL_FROM }}
           to:             ${{ env.EMAIL_TO }}
-          subject:        'FleetControl Query 3 Report – Run #${{ github.run_number }}'
+          subject:        'FleetControl Query 3 Report – Run #${{ github.run_number }}'
           body:           |
             Hi,
 
-            Attached is today’s FleetControl Query 3 report (CSV).
-            You can also view the full workflow run here:
-            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+            Attached is today’s FleetControl Query 3 CSV report.
 
-          attachments: '*.csv'
+            – GitHub Actions
+          attachments:    '*.csv'
