@@ -11,7 +11,6 @@ jobs:
 
     env:
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
-      GH_TOKEN: ${{ github.token }}
 
     steps:
       - name: Checkout code
@@ -38,26 +37,23 @@ jobs:
           FILE=$(ls Grohe_events_*.csv | head -n1)
           zip -j Grohe_Report.zip "$FILE"
 
-      - name: Upload artifact and log URL
+      - name: Upload artifact and get ID
         id: upload
         uses: actions/upload-artifact@v4
         with:
           name: Grohe_Report
           path: Grohe_Report.zip
 
-      - name: Extract artifact URL and notify Slack
+      - name: Send Slack message with download link
         run: |
-          echo "⏳ Fetching job log via gh CLI…"
-          LOG=$(gh run view ${{ github.run_id }} --log)
-
-          URL=$(echo "$LOG" | grep -oE 'https://github.com/.*/artifacts/[0-9]+' | head -n1)
-
-          if [ -z "$URL" ]; then
-            echo "::notice::Artifact URL not found – Slack message skipped."
+          ARTIFACT_ID="${{ steps.upload.outputs.artifact-id }}"
+          if [ -z "$ARTIFACT_ID" ]; then
+            echo "::notice::Artifact ID not found – skipping Slack message."
             exit 0
           fi
 
           FILE="Grohe_events_$(date +'%Y_%b' | tr '[:upper:]' '[:lower:]')_patch.csv"
+          URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${ARTIFACT_ID}"
           TEXT="*:bar_chart: FleetControl Grohe Report generated*\n• Report: \`${FILE}\`\n• :link: <${URL}|Download CSV>"
 
           jq -n --arg text "$TEXT" '{text:$text}' > slack.json
