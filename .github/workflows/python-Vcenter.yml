@@ -1,0 +1,45 @@
+name: vCenter – List all VMs
+
+on:
+  workflow_dispatch:        # manual trigger
+  #schedule:
+   # - cron: '0 2 * * *'     # daily at 02:00 UTC (optional)
+
+jobs:
+  list-vms:
+    runs-on: windows-latest
+
+    env:
+      VCENTER_SERVER: ${{ secrets.VCENTER_SERVER }}
+      VCENTER_USER:   ${{ secrets.VCENTER_USER }}
+      VCENTER_PASS:   ${{ secrets.VCENTER_PASS }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run PowerCLI to list VMs
+        shell: pwsh
+        run: |
+          # Install PowerCLI if needed
+          if (-not (Get-Module -ListAvailable -Name VMware.PowerCLI)) {
+            Install-Module -Name VMware.PowerCLI -Scope CurrentUser -Force
+            Set-PowerCLIConfiguration -InvalidCertificateAction Ignore -Confirm:$false
+          }
+
+          # Connect to vCenter
+          $securePassword = ConvertTo-SecureString $env:VCENTER_PASS -AsPlainText -Force
+          $creds = New-Object PSCredential ($env:VCENTER_USER, $securePassword)
+          Connect-VIServer -Server $env:VCENTER_SERVER -Credential $creds | Out-Null
+
+          # List all VMs to CSV
+          Get-VM | Select Name, PowerState, @{N='Cluster';E={$_.VMHost.Parent.Name}} |
+            Sort Name |
+            Export-Csv -NoTypeInformation -Path vms.csv
+
+          Disconnect-VIServer * -Confirm:$false
+
+      - name: Upload VM inventory artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: vcenter-vm-list
+          path: vms.csv
