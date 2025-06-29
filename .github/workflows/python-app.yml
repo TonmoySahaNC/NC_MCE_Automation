@@ -1,29 +1,37 @@
-name: Run FleetControl Report
+name: FleetControl Query 3 Report
 
 on:
-  workflow_dispatch:      # manual trigger
-  #schedule:               # or on a cron schedule
-  #  - cron: '0 5 * * *'   # daily at 05:00 UTC
+  workflow_dispatch:
+  #schedule:
+  #  - cron: '0 5 * * *'   # every day at 05:00 UTC
 
 jobs:
   report:
     runs-on: ubuntu-latest
 
+    env:
+      SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
+      SMTP_PORT:   ${{ secrets.SMTP_PORT }}
+      SMTP_USER:   ${{ secrets.SMTP_USER }}
+      SMTP_PASS:   ${{ secrets.SMTP_PASS }}
+      EMAIL_FROM:  ${{ secrets.EMAIL_FROM }}
+      EMAIL_TO:    ${{ secrets.EMAIL_TO }}
+
     steps:
-      - name: Check out code
+      - name: Check out repo
         uses: actions/checkout@v4
 
-      - name: Set up Python
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: 3.11
 
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
+          python -m pip install --upgrade pip
           pip install requests tzdata
 
-      - name: Run report (Query 3 for current month)
+      - name: Run FC_Report.py (Query 3) and save CSV
         run: |
           CUR_YEAR=$(date +'%Y')
           CUR_MONTH=$(date +'%-m')
@@ -35,3 +43,24 @@ jobs:
         with:
           name: fleet-report
           path: '*.csv'
+
+      - name: Send CSV via e-mail
+        if: always()
+        uses: dawidd6/action-send-mail@v4
+        with:
+          server_address: ${{ env.SMTP_SERVER }}
+          server_port:    ${{ env.SMTP_PORT }}
+          username:       ${{ env.SMTP_USER }}
+          password:       ${{ env.SMTP_PASS }}
+          subject:        'FleetControl Query 3 Report – ${{ github.run_number }}'
+          from:           ${{ env.EMAIL_FROM }}
+          to:             ${{ env.EMAIL_TO }}
+          # Attach all CSVs in the workspace root
+          attachments:    '*.csv'
+          body:           |
+            Hi,
+
+            Attached is today’s Query 3 FleetControl report (CSV).
+            You can also view the full workflow run here:
+            ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
