@@ -1,4 +1,4 @@
-name: FleetControl Grohe Report
+name: FleetControl Grohe Patching Report
 
 on:
   workflow_dispatch:
