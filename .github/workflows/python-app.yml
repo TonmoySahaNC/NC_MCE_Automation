@@ -38,28 +38,25 @@ jobs:
           name: Grohe_Report
           path: Grohe_events_*.csv
 
-      - name: Install GitHub CLI
-        run: sudo apt install gh
-
-      - name: Get direct artifact download URL
-        id: artifact_url
+      - name: Get artifact ID and build download URL
+        id: get_artifact_url
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          RUN_ID=${{ github.run_id }}
-          REPO=${{ github.repository }}
-          ARTIFACT_API="https://api.github.com/repos/${REPO}/actions/runs/${RUN_ID}/artifacts"
-          echo "Calling $ARTIFACT_API"
-          URL=$(curl -s -H "Authorization: Bearer $GH_TOKEN" "$ARTIFACT_API" \
-            | jq -r '.artifacts[0].archive_download_url')
-          echo "artifact_url=$URL" >> "$GITHUB_OUTPUT"
+          API_URL="https://api.github.com/repos/${{ github.repository }}/actions/artifacts"
+          ARTIFACT_ID=$(curl -s -H "Authorization: Bearer $GH_TOKEN" $API_URL | jq '.artifacts[] | select(.name=="Grohe_Report") | .id')
+          if [ -z "$ARTIFACT_ID" ]; then
+            echo "artifact_url=null" >> "$GITHUB_OUTPUT"
+          else
+            echo "artifact_url=https://github.com/${{ github.repository }}/actions/artifacts/${ARTIFACT_ID}/zip" >> "$GITHUB_OUTPUT"
+          fi
 
-      - name: Send Slack notification with artifact link
+      - name: Send Slack notification with correct download link
         uses: slackapi/slack-github-action@v1.24.0
         with:
           payload: |
             {
-              "text": "*📊 FleetControl Grohe Report generated*\n• Report: `Grohe_events_${{ steps.date.outputs.month }}.csv`\n• 🔗 <${{ steps.artifact_url.outputs.artifact_url }}|Click to download CSV>"
+              "text": "*📊 FleetControl Grohe Report generated*\n• Report: \`Grohe_events_${{ env.CUR_MONTH }}.csv\`\n• 🔗 <${{ steps.get_artifact_url.outputs.artifact_url }}|Click to download CSV>"
             }
         env:
           SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
