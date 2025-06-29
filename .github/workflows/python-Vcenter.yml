@@ -1,13 +1,12 @@
-name: vCenter – List all VMs
+name: vCenter VM Report
 
 on:
-  workflow_dispatch:          # manual trigger
-  #schedule:
-   # - cron: '0 2 * * *'       # daily at 02:00 UTC (remove if not needed)
+  workflow_dispatch:
 
 jobs:
-  list-vms:
-    runs-on: windows-latest
+  fetch-vms:
+    name: Generate VM Report from vCenter
+    runs-on: [self-hosted, windows]
 
     env:
       VCENTER_SERVER: ${{ secrets.VCENTER_SERVER }}
@@ -15,37 +14,18 @@ jobs:
       VCENTER_PASS:   ${{ secrets.VCENTER_PASS }}
 
     steps:
-      - name: Check out repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      # Install VMware PowerCLI (allow overwrite of existing cmdlets)
-      - name: Install VMware PowerCLI
+      - name: Run PowerShell VM list script
         shell: pwsh
         run: |
-          if (-not (Get-Module -ListAvailable -Name VMware.PowerCLI)) {
-            Install-Module -Name VMware.PowerCLI -Scope CurrentUser -Force -AllowClobber
-          }
-          # Suppress cert warnings
-          Set-PowerCLIConfiguration -InvalidCertificateAction Ignore -Confirm:$false
+          $securePass = ConvertTo-SecureString "$env:VCENTER_PASS" -AsPlainText -Force
+          $cred = New-Object System.Management.Automation.PSCredential ($env:VCENTER_USER, $securePass)
+          .\Thames\vm_list.ps1 -vcenter $env:VCENTER_SERVER -cred $cred
 
-      # Connect to vCenter and export VM list
-      - name: Generate VM inventory CSV
-        shell: pwsh
-        run: |
-          $securePwd = ConvertTo-SecureString $env:VCENTER_PASS -AsPlainText -Force
-          $cred = New-Object System.Management.Automation.PSCredential ($env:VCENTER_USER, $securePwd)
-
-          Connect-VIServer -Server $env:VCENTER_SERVER -Credential $cred | Out-Null
-
-          Get-VM | Select Name, PowerState, @{N='Cluster';E={$_.VMHost.Parent.Name}} |
-            Sort Name |
-            Export-Csv -NoTypeInformation -Path vms.csv
-
-          Disconnect-VIServer * -Confirm:$false
-
-      # Upload CSV as artifact
-      - name: Upload VM list artifact
+      - name: Upload VM report CSV as artifact
         uses: actions/upload-artifact@v4
         with:
-          name: vcenter-vm-list
-          path: vms.csv
+          name: VM_Report
+          path: Thames/vm_report.csv
