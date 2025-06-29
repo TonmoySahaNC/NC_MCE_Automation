@@ -1,9 +1,9 @@
 name: vCenter – List all VMs
 
 on:
-  workflow_dispatch:        # manual trigger
+  workflow_dispatch:          # manual trigger
   #schedule:
-   # - cron: '0 2 * * *'     # daily at 02:00 UTC (optional)
+   # - cron: '0 2 * * *'       # daily at 02:00 UTC (remove if not needed)
 
 jobs:
   list-vms:
@@ -15,30 +15,36 @@ jobs:
       VCENTER_PASS:   ${{ secrets.VCENTER_PASS }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Check out repository
+        uses: actions/checkout@v4
 
-      - name: Run PowerCLI to list VMs
+      # Install VMware PowerCLI (allow overwrite of existing cmdlets)
+      - name: Install VMware PowerCLI
         shell: pwsh
         run: |
-          # Install PowerCLI if needed
           if (-not (Get-Module -ListAvailable -Name VMware.PowerCLI)) {
-            Install-Module -Name VMware.PowerCLI -Scope CurrentUser -Force
-            Set-PowerCLIConfiguration -InvalidCertificateAction Ignore -Confirm:$false
+            Install-Module -Name VMware.PowerCLI -Scope CurrentUser -Force -AllowClobber
           }
+          # Suppress cert warnings
+          Set-PowerCLIConfiguration -InvalidCertificateAction Ignore -Confirm:$false
 
-          # Connect to vCenter
-          $securePassword = ConvertTo-SecureString $env:VCENTER_PASS -AsPlainText -Force
-          $creds = New-Object PSCredential ($env:VCENTER_USER, $securePassword)
-          Connect-VIServer -Server $env:VCENTER_SERVER -Credential $creds | Out-Null
+      # Connect to vCenter and export VM list
+      - name: Generate VM inventory CSV
+        shell: pwsh
+        run: |
+          $securePwd = ConvertTo-SecureString $env:VCENTER_PASS -AsPlainText -Force
+          $cred = New-Object System.Management.Automation.PSCredential ($env:VCENTER_USER, $securePwd)
 
-          # List all VMs to CSV
+          Connect-VIServer -Server $env:VCENTER_SERVER -Credential $cred | Out-Null
+
           Get-VM | Select Name, PowerState, @{N='Cluster';E={$_.VMHost.Parent.Name}} |
             Sort Name |
             Export-Csv -NoTypeInformation -Path vms.csv
 
           Disconnect-VIServer * -Confirm:$false
 
-      - name: Upload VM inventory artifact
+      # Upload CSV as artifact
+      - name: Upload VM list artifact
         uses: actions/upload-artifact@v4
         with:
           name: vcenter-vm-list
