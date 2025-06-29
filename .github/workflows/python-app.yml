@@ -8,8 +8,10 @@ on:
 jobs:
   report:
     runs-on: ubuntu-latest
+
     env:
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
     steps:
       - name: Check out code
@@ -32,23 +34,23 @@ jobs:
           printf '2\n3\n%s\n%s\n' "$CUR_YEAR" "$CUR_MONTH" \
             | python FleetControl/FC_Report.py
 
-      - name: Upload CSV as artifact and capture ID
-        id: upload_csv
+      - name: Compress the CSV
         run: |
           FILE=$(ls Grohe_events_*.csv | head -n1)
-          echo "FILE=$FILE"
-          echo "Uploading $FILE..."
+          zip Grohe_Report.zip "$FILE"
 
-          # Run upload-artifact manually and capture output
-          UPLOAD_OUTPUT=$(gh api \
+      - name: Upload artifact using GitHub CLI and capture artifact ID
+        id: upload_csv
+        run: |
+          echo "Uploading Grohe_Report.zip..."
+          RESP=$(gh api \
+            -X POST \
             -H "Accept: application/vnd.github+json" \
-            -X POST /repos/${{ github.repository }}/actions/artifacts \
-            -F name="Grohe_Report" \
-            -F file=@"$FILE")
+            /repos/${{ github.repository }}/actions/artifacts \
+            -f name="Grohe_Report" \
+            -f file=@Grohe_Report.zip)
 
-          echo "$UPLOAD_OUTPUT" > upload.json
-
-          # Extract ID
+          echo "$RESP" > upload.json
           ARTIFACT_ID=$(jq -r '.id' upload.json)
           echo "artifact_id=$ARTIFACT_ID" >> "$GITHUB_OUTPUT"
 
