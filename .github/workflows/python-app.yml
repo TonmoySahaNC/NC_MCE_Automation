@@ -1,14 +1,13 @@
 name: FleetControl Grohe Report
 
 on:
-  workflow_dispatch:      # Manual trigger
-  #schedule:               # Daily at 05:00 UTC
-   # - cron: '0 5 * * *'
+  workflow_dispatch:
+  #schedule:
+   # - cron: '0 5 * * *'  # runs daily at 05:00 UTC
 
 jobs:
   report:
     runs-on: ubuntu-latest
-
     env:
       SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
 
@@ -26,27 +25,26 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests tzdata
 
-      - name: Run FC_Report.py (Query 3 for Grohe, current month)
+      - name: Run FC_Report.py for Grohe (Query 3, current month)
         run: |
           CUR_YEAR=$(date +'%Y')
           CUR_MONTH=$(date +'%-m')
           printf '2\n3\n%s\n%s\n' "$CUR_YEAR" "$CUR_MONTH" \
             | python FleetControl/FC_Report.py
 
-      - name: Upload CSV artifact
+      - name: Upload CSV as artifact
         uses: actions/upload-artifact@v4
         with:
           name: Grohe_Report
-          path: Grohe_events_*.csv
+          path: 'Grohe_events_*.csv'
 
       - name: Build artifact download link
         id: artifact
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          API="https://api.github.com/repos/${{ github.repository }}/actions/artifacts"
+          API="https://api.github.com/repos/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts"
           RESP=$(curl -s -H "Authorization: Bearer $GH_TOKEN" -H "Accept: application/vnd.github+json" "$API")
-
           ART_ID=$(echo "$RESP" | jq '.artifacts[] | select(.name=="Grohe_Report") | .id' | head -n1)
 
           if [ -z "$ART_ID" ]; then
@@ -56,13 +54,22 @@ jobs:
             echo "artifact_url=https://github.com/${{ github.repository }}/actions/artifacts/${ART_ID}/zip" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Send Slack message
+      - name: Send Slack notification
         if: steps.artifact.outputs.artifact_found == 'yes'
-        run: |
-          CUR_YEAR=$(date +'%Y')
-          CUR_MONTH=$(date +'%b' | tr '[:upper:]' '[:lower:]')
-          FILE="Grohe_events_${CUR_YEAR}_${CUR_MONTH}_patch.csv"
-          LINK="${{ steps.artifact.outputs.artifact_url }}"
-          MSG="*📊 FleetControl Grohe Report generated*\n• Report: \`$FILE\`\n• 🔗 <$LINK|Click to download CSV>"
-          jq -n --arg text "$MSG" '{text:$text}' > slack.json
-          curl -sSL -X POST -H "Content-Type: application/json" --data @slack.json "$SLACK_WEBHOOK_URL"
+        uses: slackapi/slack-github-action@v1.24.0
+        with:
+          payload: |
+            {
+              "text": "*📊 FleetControl Grohe Report generated*",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": "*📊 FleetControl Grohe Report generated*\n\n• Report: \`Grohe_events_${{ steps.artifact.outputs.report_month }}.csv\`\n• <${{ steps.artifact.outputs.artifact_url }}|➡️ Click to download CSV>"
+                  }
+                }
+              ]
+            }
+        env:
+          SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
