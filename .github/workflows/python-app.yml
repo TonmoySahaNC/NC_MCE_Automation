@@ -1,67 +1,68 @@
-name: FleetControl Query 3 Report
+name: FleetControl Query 3 Report → SharePoint
 
 on:
-  workflow_dispatch:      # manual trigger
-  schedule:               # scheduled daily at 05:00 UTC
-    - cron: '0 5 * * *'
+  workflow_dispatch:          # run manually
+  #schedule:                   # every day @05:00 UTC
+  #  - cron: '0 5 * * *'
 
 jobs:
   report:
     runs-on: ubuntu-latest
 
-    # Inject repository-level secrets into the job environment
+    # Only one secret needed now: the HTTP POST URL from your flow
     env:
-      SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
-      SMTP_PORT:   ${{ secrets.SMTP_PORT }}
-      SMTP_USER:   ${{ secrets.SMTP_USER }}
-      SMTP_PASS:   ${{ secrets.SMTP_PASS }}
-      EMAIL_FROM:  ${{ secrets.EMAIL_FROM }}
-      EMAIL_TO:    ${{ secrets.EMAIL_TO }}
+      FLOW_URL: ${{ secrets.SHAREPOINT_FLOW_URL }}
 
     steps:
+      # 1. Get repo code
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      # 2. Python env
+      - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: 3.11
 
-      - name: Install dependencies
+      # 3. Install deps
+      - name: Install Python dependencies
         run: |
           python -m pip install --upgrade pip
           pip install requests tzdata
 
-      - name: Run FC_Report.py (Query 3 for current month)
+      # 4. Run your report (Query 3 for current month)
+      - name: Run FC_Report.py (Query 3, current month)
         run: |
           CUR_YEAR=$(date +'%Y')
           CUR_MONTH=$(date +'%-m')
           printf '0\n3\n%s\n%s\n' "$CUR_YEAR" "$CUR_MONTH" \
             | python FleetControl/FC_Report.py
 
+      # 5. Pick the newest CSV produced
+      - name: Identify latest CSV
+        id: csv
+        run: |
+          FILE=$(ls -1t *.csv | head -n 1)
+          echo "file=$FILE" >> "$GITHUB_OUTPUT"
+
+      # 6. POST the CSV to Power Automate → SharePoint
+      - name: Upload CSV to SharePoint via Flow
+        run: |
+          FILE="${{ steps.csv.outputs.file }}"
+          echo "Uploading $FILE to Power Automate flow"
+          # Build JSON payload: {filename, filecontent (base64)}
+          PAYLOAD=$(printf '{"filename":"%s","filecontent":"%s"}' \
+                     "$FILE" "$(base64 -w0 "$FILE")")
+          curl -sSL -X POST "$FLOW_URL" \
+               -H "Content-Type: application/json" \
+               --data "$PAYLOAD"
+          echo "Flow invoked"
+        env:
+          FLOW_URL: ${{ env.FLOW_URL }}
+
+      # 7. (Optional) Keep the CSV as a GitHub artifact too
       - name: Upload CSV artifact
         uses: actions/upload-artifact@v4
         with:
           name: fleet-report
-          path: '*.csv'
-
-      - name: Send CSV via e-mail
-        if: always()
-        uses: dawidd6/action-send-mail@v4
-        with:
-          server_address: ${{ env.SMTP_SERVER }}
-          server_port:    ${{ env.SMTP_PORT }}
-          username:       ${{ env.SMTP_USER }}
-          password:       ${{ env.SMTP_PASS }}
-          secure:         false       # plain connect for STARTTLS on 587
-          starttls:       true        # upgrade to TLS after connect
-          from:           ${{ env.EMAIL_FROM }}
-          to:             ${{ env.EMAIL_TO }}
-          subject:        'FleetControl Query 3 Report – Run #${{ github.run_number }}'
-          body:           |
-            Hi,
-
-            Attached is today’s FleetControl Query 3 CSV report.
-
-            – GitHub Actions
-          attachments:    '*.csv'
+          path: ${{ steps.csv.outputs.file }}
