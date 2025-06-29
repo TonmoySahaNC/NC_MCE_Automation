@@ -3,12 +3,13 @@ name: FleetControl Query 3 Report
 on:
   workflow_dispatch:
   #schedule:
-  #  - cron: '0 5 * * *'   # every day at 05:00 UTC
+   # - cron: '0 5 * * *'   # every day at 05:00 UTC
 
 jobs:
   report:
     runs-on: ubuntu-latest
 
+    # Inject repository secrets into the job environment
     env:
       SMTP_SERVER: ${{ secrets.SMTP_SERVER }}
       SMTP_PORT:   ${{ secrets.SMTP_PORT }}
@@ -18,10 +19,10 @@ jobs:
       EMAIL_TO:    ${{ secrets.EMAIL_TO }}
 
     steps:
-      - name: Check out repo
+      - name: Check out code
         uses: actions/checkout@v4
 
-      - name: Set up Python 3.11
+      - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: 3.11
@@ -31,7 +32,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests tzdata
 
-      - name: Run FC_Report.py (Query 3) and save CSV
+      - name: Run Query 3 and produce CSV
         run: |
           CUR_YEAR=$(date +'%Y')
           CUR_MONTH=$(date +'%-m')
@@ -52,15 +53,15 @@ jobs:
           server_port:    ${{ env.SMTP_PORT }}
           username:       ${{ env.SMTP_USER }}
           password:       ${{ env.SMTP_PASS }}
-          subject:        'FleetControl Query 3 Report – ${{ github.run_number }}'
+          secure:         true
           from:           ${{ env.EMAIL_FROM }}
           to:             ${{ env.EMAIL_TO }}
-          # Attach all CSVs in the workspace root
-          attachments:    '*.csv'
+          subject:        'FleetControl Query 3 Report – Run #${{ github.run_number }}'
           body:           |
             Hi,
 
-            Attached is today’s Query 3 FleetControl report (CSV).
+            Attached is today’s FleetControl Query 3 report (CSV).
             You can also view the full workflow run here:
             ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
 
+          attachments: '*.csv'
