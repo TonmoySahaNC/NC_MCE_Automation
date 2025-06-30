@@ -1,7 +1,7 @@
 name: vCenter VM Report
 
 on:
-  workflow_dispatch:        # manual trigger
+  workflow_dispatch:
 
 jobs:
   fetch-vms:
@@ -14,13 +14,18 @@ jobs:
       VCENTER_PASS:   ${{ secrets.VCENTER_PASS }}
 
     steps:
-      - name: Checkout repository
+      - name: Check out repository
         uses: actions/checkout@v4
+
+      - name: Install VMware PowerCLI
+        shell: pwsh
+        run: |
+          Install-Module -Name VMware.PowerCLI -Scope CurrentUser -Force -AllowClobber -verbose
+          Set-PowerCLIConfiguration -InvalidCertificateAction Ignore -Confirm:$false
 
       - name: Run VM list script
         shell: pwsh
         run: |
-          # Invoke your existing script
           .\Thames\vm_list.ps1 `
             -Server   $env:VCENTER_SERVER `
             -User     $env:VCENTER_USER `
