@@ -1,11 +1,11 @@
 name: vCenter VM Report
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:        # manual trigger
 
 jobs:
   fetch-vms:
-    name: Generate VM Report from vCenter
+    name: Generate VM List from vCenter
     runs-on: [self-hosted, windows]
 
     env:
@@ -17,15 +17,18 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Run PowerShell VM list script
+      - name: Run VM list script
         shell: pwsh
         run: |
-          $securePass = ConvertTo-SecureString "$env:VCENTER_PASS" -AsPlainText -Force
-          $cred = New-Object System.Management.Automation.PSCredential ($env:VCENTER_USER, $securePass)
-          .\Thames\vm_list.ps1 -vcenter $env:VCENTER_SERVER -cred $cred
+          # Invoke your existing script
+          .\Thames\vm_list.ps1 `
+            -Server   $env:VCENTER_SERVER `
+            -User     $env:VCENTER_USER `
+            -Password $env:VCENTER_PASS `
+            -OutFile  vms.csv
 
-      - name: Upload VM report CSV as artifact
+      - name: Upload VM list artifact
         uses: actions/upload-artifact@v4
         with:
-          name: VM_Report
-          path: Thames/vm_report.csv
+          name: vcenter-vm-list
+          path: vms.csv
