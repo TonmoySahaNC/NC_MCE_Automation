@@ -6,7 +6,7 @@ on:
 jobs:
   fetch-vms:
     name: Generate VM List from vCenter
-    runs-on: [self-hosted, windows]
+    runs-on: windows-latest
 
     env:
       VCENTER_SERVER: ${{ secrets.VCENTER_SERVER }}
