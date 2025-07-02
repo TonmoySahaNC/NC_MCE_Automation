@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 # before running this script, install required modules:
 # pip install requests tzdata
 
@@ -8,15 +9,28 @@ import os
 import calendar
 from datetime import datetime
 
+# Load API keys from environment (GitHub Actions secrets)
 customers = {
-    "1": {"CUSTOMER": "Brother","CUSTOMER_ID": "8292fa9a-abef-4173-a22b-ac2e2c8df4bd","API_KEY": "APaDot2XZYSZLB7xWFjb2N-ZkItvRYaQcqZ0cKrI"},
-    "2": {"CUSTOMER": "Grohe","CUSTOMER_ID": "940165de-1711-4053-88d6-23e588cc1593","API_KEY": "2eBuam9jVQxHl3iPPlv6x0Iz6dHK3dFkUM7igZwB"},
-    "3": {"CUSTOMER": "Heineken","CUSTOMER_ID": "a6cabac5-8168-417b-a4bb-a876c955aa3f","API_KEY": "6blOYBfWBqcqaGzO87m4GQ7W7NMvZ2gmdXpeqQtm"},
-    "4": {"CUSTOMER": "Neste","CUSTOMER_ID": "3de03704-e850-4cfa-ba2e-7137ae33689f","API_KEY": "KvkpXy4oSo0H2kRWCjCFnd0XRFSc_fWQly5z4v6A"},
-    "5": {"CUSTOMER": "Sandvik","CUSTOMER_ID": "5710c478-2f02-4335-a20a-349823e81f1d","API_KEY": "5K6o9Ciy5KMekktDdCTULOlowg_fiIvfCLgk9sWN"},
-    "6": {"CUSTOMER": "Thames","CUSTOMER_ID": "bdbc97ab-add5-4d37-afa6-5ebb7435eb3f","API_KEY": "DkK-BKFDXD5Lwi4Jcq4irxFnOUBI1Bo4Qv5RF_qy"}
+    "1": {"CUSTOMER": "Brother","CUSTOMER_ID": "8292fa9a-abef-4173-a22b-ac2e2c8df4bd","API_KEY": os.getenv("BROTHER_API_KEY")},
+    "2": {"CUSTOMER": "Grohe","CUSTOMER_ID": "940165de-1711-4053-88d6-23e588cc1593","API_KEY": os.getenv("GROHE_API_KEY")},
+    "3": {"CUSTOMER": "Heineken","CUSTOMER_ID": "a6cabac5-8168-417b-a4bb-a876c955aa3f","API_KEY": os.getenv("HEINEKEN_API_KEY")},
+    "4": {"CUSTOMER": "Neste","CUSTOMER_ID": "3de03704-e850-4cfa-ba2e-7137ae33689f","API_KEY": os.getenv("NESTE_API_KEY")},
+    "5": {"CUSTOMER": "Sandvik","CUSTOMER_ID": "5710c478-2f02-4335-a20a-349823e81f1d","API_KEY": os.getenv("SANDVIK_API_KEY")},
+    "6": {"CUSTOMER": "Thames","CUSTOMER_ID": "bdbc97ab-add5-4d37-afa6-5ebb7435eb3f","API_KEY": os.getenv("THAMES_API_KEY")}
 }
+
+
+for cust_id, info in customers.items():
+    if info["API_KEY"] is None:
+        raise RuntimeError(
+            f"Missing API key for customer '{info['CUSTOMER']}' (ID={cust_id}). "
+            "Make sure the corresponding GitHub secret is defined."
+        )
+
 print("Select a customer by entering the corresponding number:")
+print(" 0 -> All")
+for cid, info in customers.items():
+    print(f" {cid} -> {info['CUSTOMER']}")
 selected = input("Enter the customer number (0-6): ").strip()
 
 if selected != "0" and selected not in customers:
@@ -110,6 +124,9 @@ queries = {
 }
 
 print("\nSelect a query to run:")
+print(" 1 -> List of CONNECTION_LOST Servers")
+print(" 2 -> Upcoming Events for specific Month (incomingEvents)")
+print(" 3 -> Patching Report for the specific Month & Year (events)")
 selected_query = input("Enter the query number (1-3): ").strip()
 
 if selected_query not in queries:
@@ -130,7 +147,6 @@ if selected_query in ["2", "3"]:
 
 all_rows = []
 
-
 try:
     from zoneinfo import ZoneInfo
 except ImportError:
@@ -139,14 +155,13 @@ except ImportError:
 ist_zone = ZoneInfo("Asia/Kolkata")
 API_URL = "https://api.fleetcontrol.nordcloudapp.com/graphql"
 
-
 customer_keys = list(customers.keys()) if selected == "0" else [selected]
 
 for cust_id in customer_keys:
-    cust_info = customers[cust_id]
-    CUSTOMER   = cust_info["CUSTOMER"]
-    CUSTOMER_ID = cust_info["CUSTOMER_ID"]
-    API_KEY     = cust_info["API_KEY"]
+    info = customers[cust_id]
+    CUSTOMER = info["CUSTOMER"]
+    CUSTOMER_ID = info["CUSTOMER_ID"]
+    API_KEY = info["API_KEY"]
     print(f"\n---- Processing {CUSTOMER} ----")
 
     HEADERS = {
@@ -157,7 +172,6 @@ for cust_id in customer_keys:
     }
     QUERY = queries[selected_query]
 
-    # Send POST
     response = requests.post(API_URL, headers=HEADERS, json={"query": QUERY})
     if response.status_code != 200:
         print(f"[{CUSTOMER}] HTTP {response.status_code} error: {response.text}")
@@ -171,137 +185,102 @@ for cust_id in customer_keys:
     if selected_query == "1":
         groups = data["data"].get("groups", {}).get("result", [])
         for group in groups:
-            group_name = group.get("name", "")
-            for selector in group.get("resourceSelectors", []):
-                resource = selector.get("resource")
-                if not resource:
-                    continue
-                status = resource.get("state", {}).get("status", "")
-                if status == "CONNECTION_LOST":
-                    resource_name = resource.get("name", "")
-                    row = {
-                        "Customer":      CUSTOMER,
-                        "Resource Group": group_name,
-                        "Resource Name":  resource_name,
-                        "Status":         status
-                    }
-                    all_rows.append(row)
-
+            gname = group.get("name", "")
+            for sel in group.get("resourceSelectors", []):
+                res = sel.get("resource")
+                if not res: continue
+                if res.get("state", {}).get("status") == "CONNECTION_LOST":
+                    all_rows.append({
+                        "Customer": CUSTOMER,
+                        "Resource Group": gname,
+                        "Resource Name": res.get("name", ""),
+                        "Status": "CONNECTION_LOST"
+                    })
 
     elif selected_query == "2":
         events = data["data"].get("incomingEvents", {}).get("result", [])
-        for event in events:
-            start_time_str = event.get("startTime")
-            if not start_time_str:
-                continue
+        for ev in events:
+            st = ev.get("startTime")
+            if not st: continue
             try:
-                dt = datetime.fromisoformat(start_time_str)
-            except Exception as e:
-                print(f"[{CUSTOMER}] Error parsing startTime '{start_time_str}': {e}")
+                dt = datetime.fromisoformat(st)
+            except:
                 continue
-
-            tz_source_name = event.get("scheduleTimezone", "UTC")
+            tz = ev.get("scheduleTimezone", "UTC")
             try:
-                tz_source = ZoneInfo(tz_source_name)
-            except Exception:
-                tz_source = ZoneInfo("UTC")
-
-            dt_source = dt.astimezone(tz_source)
-            dt_ist    = dt_source.astimezone(ist_zone)
+                src = ZoneInfo(tz)
+            except:
+                src = ZoneInfo("UTC")
+            dt_ist = dt.astimezone(src).astimezone(ist_zone)
             if dt_ist.year == report_year and dt_ist.month == report_month:
-                plan_name = event.get("name", "Unnamed Plan")
-                plan      = event.get("plan", {})
                 patch_count = 0
-                for action in plan.get("planActions", []):
+                for action in ev.get("plan", {}).get("planActions", []):
                     if action.get("name", "").lower() == "patch":
-                        patch_count = sum(
-                            rg.get("totalNumberOfResources", 0)
-                            for rg in action.get("resourceGroups", [])
-                        )
+                        patch_count = sum(rg.get("totalNumberOfResources", 0)
+                                           for rg in action.get("resourceGroups", []))
                         break
-                row = {
-                    "Customer":        CUSTOMER,
-                    "Plan Name":       plan_name,
+                all_rows.append({
+                    "Customer": CUSTOMER,
+                    "Plan Name": ev.get("name", "Unnamed Plan"),
                     "Start Time (IST)": dt_ist.strftime("%Y-%m-%d %H:%M:%S"),
-                    "Timezone":        tz_source_name,
-                    "Resource Count":  patch_count
-                }
-                all_rows.append(row)
+                    "Timezone": tz,
+                    "Resource Count": patch_count
+                })
 
-    elif selected_query == "3":
+    else:  # selected_query == "3"
         events = data["data"].get("events", {}).get("result", [])
-        for event in events:
-            event_name     = event.get("name", "")
-            start_time_str = event.get("startTime", "")
-            if not start_time_str:
-                continue
+        for ev in events:
+            st = ev.get("startTime")
+            if not st: continue
             try:
-                dt = datetime.fromisoformat(start_time_str)
-                dt_ist = dt.astimezone(ist_zone)
-                event_start = dt_ist.strftime("%Y-%m-%d %H:%M:%S")
-            except Exception as e:
-                print(f"[{CUSTOMER}] Error parsing startTime '{start_time_str}': {e}")
+                dt_ist = datetime.fromisoformat(st).astimezone(ist_zone)
+            except:
                 continue
-
             if dt_ist.year == report_year and dt_ist.month == report_month:
-                for action in event.get("actions", []):
+                for action in ev.get("actions", []):
                     if action.get("actionName", "").lower() == "patch":
-                        action_name = action.get("actionName", "")
-                        for attempt in action.get("attempts", []):
-                            for rs in attempt.get("resourceStates", []):
-                                resource = rs.get("resource") or {}
-                                resource_name   = resource.get("name", "")
-                                resource_status = rs.get("status", "")
-                                annotation      = rs.get("annotation", "")
-                                provider        = resource.get("provider", "")
-                                full_id         = resource.get("fullCloudResourceId", "")
-                                row = {
-                                    "Customer":                CUSTOMER,
-                                    "Event Name":              event_name,
-                                    "Event Start Time (IST)":  event_start,
-                                    "ActionName":              action_name,
-                                    "ResourceName":            resource_name,
-                                    "ResourceStatus":          resource_status,
-                                    "Annotation":              annotation,
-                                    "Provider":                provider,
-                                    "FullResourceID":          full_id
-                                }
-                                all_rows.append(row)
+                        for att in action.get("attempts", []):
+                            for rs in att.get("resourceStates", []):
+                                res = rs.get("resource") or {}
+                                all_rows.append({
+                                    "Customer": CUSTOMER,
+                                    "Event Name": ev.get("name", ""),
+                                    "Event Start Time (IST)": dt_ist.strftime("%Y-%m-%d %H:%M:%S"),
+                                    "ActionName": action.get("actionName", ""),
+                                    "ResourceName": res.get("name", ""),
+                                    "ResourceStatus": rs.get("status", ""),
+                                    "Annotation": rs.get("annotation", ""),
+                                    "Provider": res.get("provider", ""),
+                                    "FullResourceID": res.get("fullCloudResourceId", "")
+                                })
 
+# Write output
 if not all_rows:
     print("\nNo data found for the selected query.")
     exit(0)
 
 if selected_query == "1":
-    fieldnames  = ["Customer", "Resource Group", "Resource Name", "Status"]
-    csv_filename = "ALL_CUSTOMERS_connection_lost.csv" if selected == "0" else f"{customers[selected]['CUSTOMER']}_connection_lost.csv"
-
+    fieldnames = ["Customer", "Resource Group", "Resource Name", "Status"]
 elif selected_query == "2":
-    fieldnames  = ["Customer", "Plan Name", "Start Time (IST)", "Timezone", "Resource Count"]
-    month_abbr  = calendar.month_abbr[report_month].lower()
-    if selected == "0":
-        csv_filename = f"ALL_CUSTOMERS_incoming_events_{report_year}_{month_abbr}.csv"
-    else:
-        csv_filename = f"{customers[selected]['CUSTOMER']}_incoming_events_{report_year}_{month_abbr}.csv"
-
+    fieldnames = ["Customer", "Plan Name", "Start Time (IST)", "Timezone", "Resource Count"]
 else:
     fieldnames = [
-        "Customer",
-        "Event Name",
-        "Event Start Time (IST)",
-        "ActionName",
-        "ResourceName",
-        "ResourceStatus",
-        "Annotation",
-        "Provider",
-        "FullResourceID"
+        "Customer", "Event Name", "Event Start Time (IST)", "ActionName",
+        "ResourceName", "ResourceStatus", "Annotation", "Provider", "FullResourceID"
     ]
-    month_abbr = calendar.month_abbr[report_month].lower()
-    if selected == "0":
-        csv_filename = f"ALL_CUSTOMERS_events_{report_year}_{month_abbr}_patch.csv"
-    else:
-        csv_filename = f"{customers[selected]['CUSTOMER']}_events_{report_year}_{month_abbr}_patch.csv"
 
+# Determine filename
+if selected_query == "1":
+    csv_filename = ("ALL_CUSTOMERS_connection_lost.csv"
+                    if selected == "0" else f"{customers[selected]['CUSTOMER']}_connection_lost.csv")
+elif selected_query == "2":
+    m = calendar.month_abbr[report_month].lower()
+    csv_filename = (f"ALL_CUSTOMERS_incoming_events_{report_year}_{m}.csv"
+                    if selected == "0" else f"{customers[selected]['CUSTOMER']}_incoming_events_{report_year}_{m}.csv")
+else:
+    m = calendar.month_abbr[report_month].lower()
+    csv_filename = (f"ALL_CUSTOMERS_events_{report_year}_{m}_patch.csv"
+                    if selected == "0" else f"{customers[selected]['CUSTOMER']}_events_{report_year}_{m}_patch.csv")
 
 with open(csv_filename, "w", newline="") as csvfile:
     writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
@@ -309,17 +288,3 @@ with open(csv_filename, "w", newline="") as csvfile:
     writer.writerows(all_rows)
 
 print(f"\nCSV file '{csv_filename}' created with {len(all_rows)} rows.")
-
-if selected_query == "3":
-    total_resources = len(all_rows)
-    status_counts = {}
-    for row in all_rows:
-        stat = row.get("ResourceStatus", "")
-        status_counts[stat] = status_counts.get(stat, 0) + 1
-
-    print(f"\nTotal resources in this report: {total_resources}")
-    for stat, count in status_counts.items():
-        print(f"Count of ResourceStatus '{stat}': {count}")
-
-if os.path.exists("output.json"):
-    os.remove("output.json")
