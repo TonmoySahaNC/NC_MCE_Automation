@@ -1,44 +1,72 @@
-name: FleetControl Grohe Report
+name: FleetControl Grohe Patching Report
 
 on:
   workflow_dispatch:
+    inputs:
+      year:
+        description: 'Report year (e.g. 2025)'
+        required: false
+        default: ''
+      month:
+        description: 'Report month (1–12)'
+        required: false
+        default: ''
   #schedule:
-  #  - cron: '0 5 * * *'   # daily at 05:00 UTC
+  #  - cron: '0 5 * * *'
 
 jobs:
   grohe-report:
     runs-on: ubuntu-latest
 
     env:
-      CUSTOMER_NAME: Grohe
-      CUSTOMER_ID:   940165de-1711-4053-88d6-23e588cc1593
-      API_KEY:       ${{ secrets.GROHE_API_KEY }}
-      QUERY:         "3"
-      REPORT_YEAR:   ${{ github.event.inputs.year || '' }}
-      REPORT_MONTH:  ${{ github.event.inputs.month || '' }}
+      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      CUSTOMER_NAME:     Grohe
+      CUSTOMER_ID:       940165de-1711-4053-88d6-23e588cc1593
+      API_KEY:           ${{ secrets.GROHE_API_KEY }}
+      QUERY:             "3"
+      REPORT_YEAR:       ${{ github.event.inputs.year }}
+      REPORT_MONTH:      ${{ github.event.inputs.month }}
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout code
+        uses: actions/checkout@v4
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: 3.11
 
-      - name: Install dependencies
+      - name: Install Python dependencies
         run: |
           pip install requests tzdata
 
-      - name: Run report for Grohe
+      - name: Generate Grohe CSV report
         run: |
           python FleetControl/FC_Report.py
 
-      - name: Zip CSV and upload artifact
+      - name: Zip the report
         run: |
-          FILE=$(ls Grohe_*_patch.csv | head -n1)
-          zip -j grohe-report.zip "$FILE"
-        # Upload
-      - uses: actions/upload-artifact@v4
+          FILE=$(ls Grohe_events_*.csv | head -n1)
+          zip -j Grohe_Report.zip "$FILE"
+
+      - name: Upload artifact and get ID
+        id: upload
+        uses: actions/upload-artifact@v4
         with:
-          name: grohe-report
-          path: grohe-report.zip
+          name: Grohe_Report
+          path: Grohe_Report.zip
+
+      - name: Send Slack message with download link
+        run: |
+          ARTIFACT_ID="${{ steps.upload.outputs.artifact-id }}"
+          if [ -z "$ARTIFACT_ID" ]; then
+            echo "::notice::Artifact ID not found – skipping Slack message."
+            exit 0
+          fi
+
+          FILE="Grohe_events_${{ env.REPORT_YEAR }}_${{ env.REPORT_MONTH }}_patch.csv"
+          URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${ARTIFACT_ID}"
+          TEXT="*:bar_chart: FleetControl Grohe Report generated*\n• Report: \`$FILE\`\n• :link: <${URL}|Download CSV>"
+
+          jq -n --arg text "$TEXT" '{text:$text}' > slack.json
+          curl -sSL -X POST -H 'Content-Type: application/json' --data @slack.json "$Test_SLACK_WEBHOOK_URL"
