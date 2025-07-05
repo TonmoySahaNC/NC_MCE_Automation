@@ -8,7 +8,7 @@ on:
         required: false
         default: ''
       month:
-        description: 'Report month (1-12)'
+        description: 'Report month (1–12)'
         required: false
         default: ''
   # schedule:
@@ -19,13 +19,13 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      SLACK_WEBHOOK_URL: ${{ secrets.Test_SLACK_WEBHOOK_URL }}  # updated secret name
-      CUSTOMER_NAME:     Grohe
-      CUSTOMER_ID:       940165de-1711-4053-88d6-23e588cc1593
-      API_KEY:           ${{ secrets.GROHE_API_KEY }}
-      QUERY:             "3"
-      REPORT_YEAR:       ${{ github.event.inputs.year }}
-      REPORT_MONTH:      ${{ github.event.inputs.month }}
+      SLACK_WEBHOOK_URL:   ${{ secrets.Test_SLACK_WEBHOOK_URL }}
+      CUSTOMER_NAME:       Grohe
+      CUSTOMER_ID:         940165de-1711-4053-88d6-23e588cc1593
+      API_KEY:             ${{ secrets.GROHE_API_KEY }}
+      QUERY:               "3"
+      REPORT_YEAR:         ${{ github.event.inputs.year }}
+      REPORT_MONTH:        ${{ github.event.inputs.month }}
 
     steps:
       - name: Checkout code
@@ -45,16 +45,18 @@ jobs:
         run: |
           python FleetControl/FC_Report.py
 
-      - name: Zip the report
+      - name: Zip report using 3‑letter month abbreviation
         run: |
-          # Turn numeric month (e.g. “6”) into “jun”
+          # Convert numeric month (e.g. “6”) into “jun”
           M=$(date -d "${REPORT_YEAR}-${REPORT_MONTH}-01" +'%b' | tr '[:upper:]' '[:lower:]')
-          FILE=$(ls ${CUSTOMER_NAME}_events_${REPORT_YEAR}_${M}_patch.csv | head -n1)
-          if [ -z "$FILE" ]; then
-            echo "::error::Could not find file for ${CUSTOMER_NAME}_events_${REPORT_YEAR}_${M}_patch.csv"
+          FILENAME="${CUSTOMER_NAME}_events_${REPORT_YEAR}_${M}_patch.csv"
+
+          if [ ! -f "$FILENAME" ]; then
+            echo "::error::File not found: $FILENAME"
             exit 1
           fi
-          zip -j Grohe_Report.zip "$FILE"
+
+          zip -j Grohe_Report.zip "$FILENAME"
 
       - name: Upload artifact and get ID
         id: upload
@@ -65,16 +67,20 @@ jobs:
 
       - name: Send Slack message with download link
         run: |
-          ARTIFACT_ID=${{ steps.upload.outputs.artifact-id }}
+          ARTIFACT_ID="${{ steps.upload.outputs.artifact-id }}"
           if [ -z "$ARTIFACT_ID" ]; then
             echo "::notice::Artifact ID not found – skipping Slack message."
             exit 0
           fi
 
-          FILE_NAME="${CUSTOMER_NAME}_events_${REPORT_YEAR}_${REPORT_MONTH}_patch.csv"
+          # Recompute month abbr and filename
+          M=$(date -d "${REPORT_YEAR}-${REPORT_MONTH}-01" +'%b' | tr '[:upper:]' '[:lower:]')
+          FILE="${CUSTOMER_NAME}_events_${REPORT_YEAR}_${M}_patch.csv"
           URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${ARTIFACT_ID}"
-          TEXT="*:bar_chart: FleetControl ${CUSTOMER_NAME} Report generated*\n• Report: \\`${FILE_NAME}\\`\n• :link: <${URL}|Download CSV>"
 
-          echo "$TEXT"
+          TEXT="*:bar_chart: FleetControl ${CUSTOMER_NAME} Report generated*\
+          \n• Report: \`${FILE}\`\
+          \n• :link: <${URL}|Download CSV>"
+
           PAYLOAD=$(jq -nc --arg text "$TEXT" '{text:$text}')
           curl -sSL -X POST -H 'Content-Type: application/json' --data "$PAYLOAD" "$SLACK_WEBHOOK_URL"
