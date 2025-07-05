@@ -2,24 +2,15 @@ name: FleetControl Grohe Patching Report
 
 on:
   workflow_dispatch:
-    inputs:
-      year:
-        description: 'Report year (e.g. 2025)'
-        required: false
-        default: ''
-      month:
-        description: 'Report month (1–12)'
-        required: false
-        default: ''
-  #schedule:
-  #  - cron: '0 5 * * *'
+  # schedule:
+  #   - cron: '0 5 * * *'
 
 jobs:
   grohe-report:
     runs-on: ubuntu-latest
 
     env:
-      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      SLACK_WEBHOOK_URL: ${{ secrets.Test_SLACK_WEBHOOK_URL }}
       CUSTOMER_NAME:     Grohe
       CUSTOMER_ID:       940165de-1711-4053-88d6-23e588cc1593
       API_KEY:           ${{ secrets.GROHE_API_KEY }}
@@ -38,6 +29,7 @@ jobs:
 
       - name: Install Python dependencies
         run: |
+          python -m pip install --upgrade pip
           pip install requests tzdata
 
       - name: Generate Grohe CSV report
@@ -46,7 +38,7 @@ jobs:
 
       - name: Zip the report
         run: |
-          FILE=$(ls Grohe_events_*.csv | head -n1)
+          FILE=$(ls ${CUSTOMER_NAME}_events_${REPORT_YEAR}_${REPORT_MONTH}_patch.csv | head -n1)
           zip -j Grohe_Report.zip "$FILE"
 
       - name: Upload artifact and get ID
@@ -58,15 +50,16 @@ jobs:
 
       - name: Send Slack message with download link
         run: |
-          ARTIFACT_ID="${{ steps.upload.outputs.artifact-id }}"
+          ARTIFACT_ID=${{ steps.upload.outputs.artifact-id }}
           if [ -z "$ARTIFACT_ID" ]; then
             echo "::notice::Artifact ID not found – skipping Slack message."
             exit 0
           fi
 
-          FILE="Grohe_events_${{ env.REPORT_YEAR }}_${{ env.REPORT_MONTH }}_patch.csv"
+          FILE_NAME="${CUSTOMER_NAME}_events_${REPORT_YEAR}_${REPORT_MONTH}_patch.csv"
           URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${ARTIFACT_ID}"
-          TEXT="*:bar_chart: FleetControl Grohe Report generated*\n• Report: \`$FILE\`\n• :link: <${URL}|Download CSV>"
+          TEXT="*:bar_chart: FleetControl ${CUSTOMER_NAME} Report generated*\n• Report: \\`${FILE_NAME}\\`\n• :link: <${URL}|Download CSV>"
 
-          jq -n --arg text "$TEXT" '{text:$text}' > slack.json
-          curl -sSL -X POST -H 'Content-Type: application/json' --data @slack.json "$Test_SLACK_WEBHOOK_URL"
+          echo "$TEXT"
+          PAYLOAD=$(jq -nc --arg text "$TEXT" '{text:$text}')
+          curl -sSL -X POST -H 'Content-Type: application/json' --data "$PAYLOAD" "$SLACK_WEBHOOK_URL"
