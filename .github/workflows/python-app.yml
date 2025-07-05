@@ -47,7 +47,9 @@ jobs:
 
       - name: Zip the report
         run: |
-          FILE=$(ls ${CUSTOMER_NAME}_events_${REPORT_YEAR}_${REPORT_MONTH}_patch.csv | head -n1)
+          # Compute the lowercase 3‑letter month (e.g. “jun” for 6)
+          M=$(date -d "${REPORT_YEAR}-${REPORT_MONTH}-01" +'%b' | tr '[:upper:]' '[:lower:]')
+          FILE=$(ls ${CUSTOMER_NAME}_events_${REPORT_YEAR}_${M}_patch.csv | head -n1)
           zip -j Grohe_Report.zip "$FILE"
 
       - name: Upload artifact and get ID
