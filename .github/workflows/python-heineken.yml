@@ -11,8 +11,8 @@ on:
         description: 'Report month (1–12)'
         required: false
         default: ''
-  # schedule:
-  #   - cron: '0 5 * * *'
+  schedule:
+    - cron: '30 13 28-31 * *'
 
 jobs:
   Patching-report:
@@ -26,6 +26,14 @@ jobs:
       QUERY:               "3"
 
     steps:
+      - name: Bail out if not last day of month
+        shell: bash
+        run: |
+          # If tomorrow is day “01”, today is the last day
+          if [[ "$(date -d tomorrow +'%d')" != "01" ]]; then
+            echo "Not the last day of the month; exiting early."
+            exit 0
+          fi
       - name: Checkout code
         uses: actions/checkout@v4
 
