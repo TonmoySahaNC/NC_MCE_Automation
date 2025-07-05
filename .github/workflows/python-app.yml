@@ -1,60 +1,44 @@
-name: FleetControl Grohe Patching Report
+name: FleetControl Grohe Report
 
 on:
   workflow_dispatch:
   #schedule:
-   # - cron: '0 5 * * *'
+  #  - cron: '0 5 * * *'   # daily at 05:00 UTC
 
 jobs:
   grohe-report:
     runs-on: ubuntu-latest
 
     env:
-      SLACK_WEBHOOK_URL: ${{ secrets.SLACK_WEBHOOK_URL }}
+      CUSTOMER_NAME: Grohe
+      CUSTOMER_ID:   940165de-1711-4053-88d6-23e588cc1593
+      API_KEY:       ${{ secrets.GROHE_API_KEY }}
+      QUERY:         "3"
+      REPORT_YEAR:   ${{ github.event.inputs.year || '' }}
+      REPORT_MONTH:  ${{ github.event.inputs.month || '' }}
 
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
         with:
           python-version: 3.11
 
-      - name: Install Python dependencies
+      - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
           pip install requests tzdata
 
-      - name: Generate Grohe CSV report
+      - name: Run report for Grohe
         run: |
-          CUR_YEAR=$(date +'%Y')
-          CUR_MONTH=$(date +'%-m')
-          printf '2\n3\n%s\n%s\n' "$CUR_YEAR" "$CUR_MONTH" | python FleetControl/FC_Report.py
+          python FleetControl/FC_Report.py
 
-      - name: Zip the report
+      - name: Zip CSV and upload artifact
         run: |
-          FILE=$(ls Grohe_events_*.csv | head -n1)
-          zip -j Grohe_Report.zip "$FILE"
-
-      - name: Upload artifact and get ID
-        id: upload
-        uses: actions/upload-artifact@v4
+          FILE=$(ls Grohe_*_patch.csv | head -n1)
+          zip -j grohe-report.zip "$FILE"
+        # Upload
+      - uses: actions/upload-artifact@v4
         with:
-          name: Grohe_Report
-          path: Grohe_Report.zip
-
-      - name: Send Slack message with download link
-        run: |
-          ARTIFACT_ID="${{ steps.upload.outputs.artifact-id }}"
-          if [ -z "$ARTIFACT_ID" ]; then
-            echo "::notice::Artifact ID not found – skipping Slack message."
-            exit 0
-          fi
-
-          FILE="Grohe_events_$(date +'%Y_%b' | tr '[:upper:]' '[:lower:]')_patch.csv"
-          URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${ARTIFACT_ID}"
-          TEXT="*:bar_chart: FleetControl Grohe Report generated*\n• Report: \`${FILE}\`\n• :link: <${URL}|Download CSV>"
-
-          jq -n --arg text "$TEXT" '{text:$text}' > slack.json
-          curl -sSL -X POST -H 'Content-Type: application/json' --data @slack.json "$SLACK_WEBHOOK_URL"
+          name: grohe-report
+          path: grohe-report.zip
