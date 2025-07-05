@@ -1,0 +1,89 @@
+name: FleetControl Brother Patching Report
+
+on:
+  workflow_dispatch:
+    inputs:
+      year:
+        description: 'Report year (e.g. 2025)'
+        required: false
+        default: ''
+      month:
+        description: 'Report month (1–12)'
+        required: false
+        default: ''
+  # schedule:
+  #   - cron: '0 5 * * *'
+
+jobs:
+  grohe-report:
+    runs-on: ubuntu-latest
+
+    env:
+      SLACK_WEBHOOK_URL:   ${{ secrets.BROTHER_SLACK_WEBHOOK_URL }}
+      CUSTOMER_NAME:       Brother
+      CUSTOMER_ID:         8292fa9a-abef-4173-a22b-ac2e2c8df4bd
+      API_KEY:             ${{ secrets.GROHE_API_KEY }}
+      QUERY:               "3"
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set default year and month
+        shell: bash
+        env:
+          INPUT_YEAR:  ${{ github.event.inputs.year }}
+          INPUT_MONTH: ${{ github.event.inputs.month }}
+        run: |
+          # Default to current year and month if inputs are blank
+          YEAR=${INPUT_YEAR:-$(date +'%Y')}
+          MONTH=${INPUT_MONTH:-$(date +'%m')}
+          echo "REPORT_YEAR=$YEAR" >> $GITHUB_ENV
+          echo "REPORT_MONTH=$MONTH" >> $GITHUB_ENV
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: 3.11
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install requests tzdata
+
+      - name: Generate Grohe CSV report
+        run: |
+          python FleetControl/FC_Report.py
+
+      - name: Zip report using 3‑letter month abbreviation
+        run: |
+          M=$(date -d "${REPORT_YEAR}-${REPORT_MONTH}-01" +'%b' | tr '[:upper:]' '[:lower:]')
+          FILENAME="${CUSTOMER_NAME}_events_${REPORT_YEAR}_${M}_patch.csv"
+          if [ ! -f "$FILENAME" ]; then
+            echo "::error::File not found: $FILENAME"
+            exit 1
+          fi
+          zip -j Grohe_Report.zip "$FILENAME"
+
+      - name: Upload artifact and get ID
+        id: upload
+        uses: actions/upload-artifact@v4
+        with:
+          name: Grohe_Report
+          path: Grohe_Report.zip
+
+      - name: Send Slack message with download link
+        run: |
+          ARTIFACT_ID="${{ steps.upload.outputs.artifact-id }}"
+          if [ -z "$ARTIFACT_ID" ]; then
+            echo "::notice::Artifact ID not found – skipping Slack message."
+            exit 0
+          fi
+
+          M=$(date -d "${REPORT_YEAR}-${REPORT_MONTH}-01" +'%b' | tr '[:upper:]' '[:lower:]')
+          FILE="${CUSTOMER_NAME}_events_${REPORT_YEAR}_${M}_patch.csv"
+          URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${ARTIFACT_ID}"
+
+          TEXT="*:bar_chart: FleetControl ${CUSTOMER_NAME} Report generated*\n• Report: \`${FILE}\`\n• :link: <${URL}|Download CSV>"
+          PAYLOAD=$(jq -nc --arg text "$TEXT" '{text:$text}')
+          curl -sSL -X POST -H 'Content-Type: application/json' --data "$PAYLOAD" "$SLACK_WEBHOOK_URL"
