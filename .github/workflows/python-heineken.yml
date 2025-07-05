@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      SLACK_WEBHOOK_URL:   ${{ secrets.COMMUNICATION_SLACK_WEBHOOK_URL }}
+      SLACK_WEBHOOK_URL:   ${{ secrets.HEINEKEN_SLACK_WEBHOOK_URL }}
       CUSTOMER_NAME:       Heineken
       CUSTOMER_ID:         a6cabac5-8168-417b-a4bb-a876c955aa3f
       API_KEY:             ${{ secrets.HEINEKEN_API_KEY }}
