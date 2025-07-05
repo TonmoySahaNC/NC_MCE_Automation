@@ -15,7 +15,7 @@ on:
   #   - cron: '0 5 * * *'
 
 jobs:
-  grohe-report:
+  Patching-report:
     runs-on: ubuntu-latest
 
     env:
