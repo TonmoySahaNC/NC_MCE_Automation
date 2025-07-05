@@ -15,11 +15,11 @@ on:
   #   - cron: '0 5 * * *'
 
 jobs:
-  grohe-report:
+  Patching-report:
     runs-on: ubuntu-latest
 
     env:
-      SLACK_WEBHOOK_URL:   ${{ secrets.Test_SLACK_WEBHOOK_URL }}
+      SLACK_WEBHOOK_URL:   ${{ secrets.GROHE_SLACK_WEBHOOK_URL }}
       CUSTOMER_NAME:       Grohe
       CUSTOMER_ID:         940165de-1711-4053-88d6-23e588cc1593
       API_KEY:             ${{ secrets.GROHE_API_KEY }}
