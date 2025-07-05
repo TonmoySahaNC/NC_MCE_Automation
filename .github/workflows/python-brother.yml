@@ -22,7 +22,7 @@ jobs:
       SLACK_WEBHOOK_URL:   ${{ secrets.BROTHER_SLACK_WEBHOOK_URL }}
       CUSTOMER_NAME:       Brother
       CUSTOMER_ID:         8292fa9a-abef-4173-a22b-ac2e2c8df4bd
-      API_KEY:             ${{ secrets.GROHE_API_KEY }}
+      API_KEY:             ${{ secrets.BROTHER_API_KEY }}
       QUERY:               "3"
 
     steps:
@@ -51,7 +51,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install requests tzdata
 
-      - name: Generate Grohe CSV report
+      - name: Generate Brother CSV report
         run: |
           python FleetControl/FC_Report.py
 
@@ -63,14 +63,14 @@ jobs:
             echo "::error::File not found: $FILENAME"
             exit 1
           fi
-          zip -j Grohe_Report.zip "$FILENAME"
+          zip -j Brother_Report.zip "$FILENAME"
 
       - name: Upload artifact and get ID
         id: upload
         uses: actions/upload-artifact@v4
         with:
-          name: Grohe_Report
-          path: Grohe_Report.zip
+          name: Brother_Report
+          path: Brother_Report.zip
 
       - name: Send Slack message with download link
         run: |
