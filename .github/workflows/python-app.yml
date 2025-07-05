@@ -24,12 +24,23 @@ jobs:
       CUSTOMER_ID:         940165de-1711-4053-88d6-23e588cc1593
       API_KEY:             ${{ secrets.GROHE_API_KEY }}
       QUERY:               "3"
-      REPORT_YEAR:         ${{ github.event.inputs.year }}
-      REPORT_MONTH:        ${{ github.event.inputs.month }}
+      # REPORT_YEAR and REPORT_MONTH will be set below with defaults
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
+
+      - name: Set default year and month
+        shell: bash
+        env:
+          INPUT_YEAR:  ${{ github.event.inputs.year }}
+          INPUT_MONTH: ${{ github.event.inputs.month }}
+        run: |
+          # Default to current year/month if inputs are blank
+          YEAR=${INPUT_YEAR:-$(date +'%Y')}
+          MONTH=${INPUT_MONTH:-$(date +'%m')}
+          echo "REPORT_YEAR=$YEAR" >> $GITHUB_ENV
+          echo "REPORT_MONTH=$MONTH" >> $GITHUB_ENV
 
       - name: Set up Python 3.11
         uses: actions/setup-python@v5
@@ -47,15 +58,12 @@ jobs:
 
       - name: Zip report using 3‑letter month abbreviation
         run: |
-          # Convert numeric month (e.g. “6”) into “jun”
           M=$(date -d "${REPORT_YEAR}-${REPORT_MONTH}-01" +'%b' | tr '[:upper:]' '[:lower:]')
           FILENAME="${CUSTOMER_NAME}_events_${REPORT_YEAR}_${M}_patch.csv"
-
           if [ ! -f "$FILENAME" ]; then
             echo "::error::File not found: $FILENAME"
             exit 1
           fi
-
           zip -j Grohe_Report.zip "$FILENAME"
 
       - name: Upload artifact and get ID
@@ -73,14 +81,10 @@ jobs:
             exit 0
           fi
 
-          # Recompute month abbr and filename
           M=$(date -d "${REPORT_YEAR}-${REPORT_MONTH}-01" +'%b' | tr '[:upper:]' '[:lower:]')
           FILE="${CUSTOMER_NAME}_events_${REPORT_YEAR}_${M}_patch.csv"
           URL="https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}/artifacts/${ARTIFACT_ID}"
 
-          TEXT="*:bar_chart: FleetControl ${CUSTOMER_NAME} Report generated*\
-          \n• Report: \`${FILE}\`\
-          \n• :link: <${URL}|Download CSV>"
-
+          TEXT="*:bar_chart: FleetControl ${CUSTOMER_NAME} Report generated*\n• Report: \`${FILE}\`\n• :link: <${URL}|Download CSV>"
           PAYLOAD=$(jq -nc --arg text "$TEXT" '{text:$text}')
           curl -sSL -X POST -H 'Content-Type: application/json' --data "$PAYLOAD" "$SLACK_WEBHOOK_URL"
