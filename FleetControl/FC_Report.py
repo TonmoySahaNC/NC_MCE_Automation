@@ -117,6 +117,21 @@ else:  # QUERY == "3"
                                 "Provider": res.get("provider",""),
                                 "FullResourceID": res.get("fullCloudResourceId","")
                             })
+                elif CUSTOMER_NAME.lower() == "heineken" and action_name != "patch":
+                    for att in act.get("attempts", []):
+                        for rs in att.get("resourceStates", []):
+                            res = rs.get("resource") or {}
+                            all_rows.append({
+                                "Customer": CUSTOMER_NAME,
+                                "Event Name": ev.get("name", ""),
+                                "Event Start Time (IST)": dt_ist.strftime("%Y-%m-%d %H:%M:%S"),
+                                "ActionName": act.get("actionName", ""),
+                                "ResourceName": res.get("name", ""),
+                                "ResourceStatus": rs.get("status", ""),
+                                "Annotation": rs.get("annotation", ""),
+                                "Provider": res.get("provider", ""),
+                                "FullResourceID": res.get("fullCloudResourceId", "")
+                            })
 
 # Write CSV
 if not all_rows:
