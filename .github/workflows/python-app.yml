@@ -2,6 +2,15 @@ name: FleetControl Grohe Patching Report
 
 on:
   workflow_dispatch:
+    inputs:
+      year:
+        description: 'Report year (e.g. 2025)'
+        required: false
+        default: ''
+      month:
+        description: 'Report month (1-12)'
+        required: false
+        default: ''
   # schedule:
   #   - cron: '0 5 * * *'
 
@@ -10,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
 
     env:
-      SLACK_WEBHOOK_URL: ${{ secrets.Test_SLACK_WEBHOOK_URL }}
+      SLACK_WEBHOOK_URL: ${{ secrets.Test_SLACK_WEBHOOK_URL }}  # updated secret name
       CUSTOMER_NAME:     Grohe
       CUSTOMER_ID:       940165de-1711-4053-88d6-23e588cc1593
       API_KEY:           ${{ secrets.GROHE_API_KEY }}
