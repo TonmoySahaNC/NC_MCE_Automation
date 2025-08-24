@@ -26,12 +26,12 @@ if not CUSTOMER_ID or not API_KEY:
 
 # GraphQL queries
 query1 = """query { groups { result { name resourceSelectors { resource { name state { status } } } } } }"""
-query2 = """query { incomingEvents(limit:500, filter:{filterBy:{field:START_TIME operator:GT values:"2025-01-01T00:00:00"}}) { result { name startTime scheduleTimezone plan { planActions { name resourceGroups { totalNumberOfResources } } } } } }"""
+query2 = """query { incomingEvents(limit:500, filter:{filterBy:{field:START_TIME operator:GT values:"2025-05-01T00:00:00"}}) { result { name startTime scheduleTimezone plan { planActions { name resourceGroups { totalNumberOfResources } } } } } }"""
 query3 = """
 query {
   events(
     limit: 500,
-    filter:{filterBy:{field:START_TIME operator:GT values:"2025-02-01T00:00:00"}}
+    filter:{filterBy:{field:START_TIME operator:GT values:"2025-04-01T00:00:00"}}
   ) {
     result {
       name
