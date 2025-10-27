@@ -1,4 +1,4 @@
-name: FleetControl Neste Patching Report
+name: FleetControl Neste Upcoming Patching Report
 
 on:
   workflow_dispatch:
